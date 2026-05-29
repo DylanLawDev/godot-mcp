@@ -147,3 +147,15 @@ func test_apply_props_allows_int_to_float_coercion() -> void:
 	assert_has(res["set"], "rotation")
 	assert_eq(res["errors"].size(), 0)
 	n.free()
+
+func test_scene_current_resource_reports_closed_headless() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.scene_current({})
+	assert_true(r["ok"])
+	assert_eq(r["value"], {"open": false})
+
+func test_script_current_resource_reports_closed_headless() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.script_current({})
+	assert_true(r["ok"])
+	assert_eq(r["value"], {"open": false})

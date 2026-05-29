@@ -132,5 +132,14 @@ func _build_default_resource_registry(project = null, scene = null):
 	rreg.register("godot://project/info", "project_info",
 		"Project metadata and settings.", "application/json",
 		Callable(project, "get_project_info"))
+	if scene == null:
+		scene = SceneTools.new()
+	rreg.register("godot://scene/current", "scene_current",
+		"The currently open scene (path + node tree).", "application/json",
+		Callable(scene, "scene_current"))
+	rreg.register("godot://script/current", "script_current",
+		"The currently open script (path + source).", "application/json",
+		Callable(scene, "script_current"))
+	rreg.set_meta("_scene", scene)
 	rreg.set_meta("_project", project)
 	return rreg

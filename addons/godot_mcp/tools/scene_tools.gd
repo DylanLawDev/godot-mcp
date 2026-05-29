@@ -201,6 +201,26 @@ func _serialize_tree(node: Node, root: Node) -> Dictionary:
 		out["children"].append(_serialize_tree(c, root))
 	return out
 
+# --- Resource handlers ---
+
+func scene_current(_args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": true, "value": {"open": false}}
+	return {"ok": true, "value": {
+		"path": root.scene_file_path,
+		"tree": _serialize_tree(root, root),
+	}}
+
+func script_current(_args: Dictionary) -> Dictionary:
+	var scr = _current_script()
+	if scr == null:
+		return {"ok": true, "value": {"open": false}}
+	return {"ok": true, "value": {
+		"path": scr.resource_path,
+		"content": scr.source_code,
+	}}
+
 # --- Live seams (only meaningful inside a live editor; null headlessly) ---
 
 func _edited_scene_root() -> Node:
@@ -214,3 +234,12 @@ func _undo_redo():
 		return null
 	var plugin = Engine.get_meta("GodotMCPPlugin")
 	return plugin.get_undo_redo()
+
+func _current_script():
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return null
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	var se = plugin.get_editor_interface().get_script_editor()
+	if se == null:
+		return null
+	return se.get_current_script()

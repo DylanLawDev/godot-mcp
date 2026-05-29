@@ -36,12 +36,14 @@ curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
 Expect: `result.protocolVersion = "2025-06-18"`, `result.capabilities.tools` present,
 `result.serverInfo.name = "godot-mcp"`.
 
-**tools/list** — expect all 6 tool names.
+**tools/list** — expect all 14 tool names.
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
-Expect: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `validate_script`.
+Expect: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`,
+`validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`,
+`get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`.
 
 ## 3. Exercise each tool against the `examples/` fixtures
 
@@ -94,14 +96,81 @@ curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
 Expect: both `isError:false`; `examples/scratch/new_thing.gd` exists and ends as `extends Node2D`.
 (Clean up afterward: `rm -r examples/scratch`.)
 
-## 4. Connect Claude Code
+## 4. Exercise scene tools and current resources
+
+Open `examples/scenes/main.tscn` in the editor (double-click it in the
+FileSystem dock or run `godot4 --editor --path . examples/scenes/main.tscn`).
+The scene must be **open in the editor** for all scene tools to work.
+
+**get_scene_tree** — returns the node tree of the currently-open scene.
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"get_scene_tree","arguments":{}}}'
+```
+Expect: `isError:false`, `result.content[0].text` contains a JSON object with
+a `tree` key whose `name` matches the scene's root node.
+
+**create_node** — adds a child node (undoable).
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"create_node","arguments":{"parent_path":".","type":"Node2D","name":"Marker"}}}'
+```
+Expect: `isError:false`. Verify the `Marker` node appears in the Scene dock.
+Press **Ctrl-Z** in the editor — the node should disappear (undo works).
+
+**get_node_properties** — inspect a node's properties.
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"get_node_properties","arguments":{"path":"."}}}'
+```
+Expect: `isError:false`, response contains property names and their
+`var_to_str`-encoded values for the scene root node.
+
+**modify_node** — set a property using a `var_to_str` string (undoable).
+First re-create the `Marker` node (re-run the `create_node` curl above), then:
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"modify_node","arguments":{"path":"Marker","properties":{"position":"Vector2(10, 20)"}}}}'
+```
+Expect: `isError:false`, response JSON includes `"set":["position"]` and
+`"errors":[]`. The `Marker` node's position in the Inspector should update.
+
+**delete_node** — removes a node (undoable).
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"delete_node","arguments":{"path":"Marker"}}}'
+```
+Expect: `isError:false`. The `Marker` node should be gone from the Scene dock.
+Press **Ctrl-Z** — it should reappear.
+
+**resources/read — godot://scene/current** — MCP resource for the open scene.
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":25,"method":"resources/read","params":{"uri":"godot://scene/current"}}'
+```
+Expect: `result.contents[0].text` contains JSON with a `path` field (the
+open scene's file path, empty string for an unsaved scene) and a `tree` object
+matching the live scene hierarchy. When no scene is open the body is
+`{"open":false}` instead.
+
+**resources/read — godot://script/current** — MCP resource for the open script.
+First open `examples/scripts/player.gd` in the editor script tab, then:
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":26,"method":"resources/read","params":{"uri":"godot://script/current"}}'
+```
+Expect: `result.contents[0].text` contains JSON with a `path` field pointing
+to `player.gd` and the full script source in a `content` field. When no script
+is open the body is `{"open":false}` instead.
+
+## 5. Connect Claude Code
 
 ```bash
 claude mcp add --transport http godot http://127.0.0.1:8765/mcp
 claude mcp list   # "godot" should appear and be reachable
 ```
 
-In a Claude Code session, confirm the 6 tools are listed and that asking Claude
+In a Claude Code session, confirm the 14 tools are listed and that asking Claude
 to read a project file invokes `read_file`.
 
 ## Notes / known limitations (v1)
@@ -111,4 +180,4 @@ to read a project file invokes `read_file`.
 - **One editor = one port.** Two projects → two editors → two ports.
 - Path handling rejects `..` traversal but does not normalize `user://` or
   percent-encoded paths (defense-in-depth, not the security boundary — loopback/trusted).
-- Scene, run/feedback, and runtime tools are **out of scope for v1** (future plans).
+- Run/feedback and in-game runtime tools are **not yet implemented** (future plans). Scene tools (`get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`) are implemented and covered in section 4 above.

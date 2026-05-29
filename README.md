@@ -72,17 +72,21 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (lean editor core, ~18 tools)
+## v1 scope (14 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
 - **Files/scripts:** `read_file`, `list_dir`, `search_project`, `create_script`,
   `edit_script`, `validate_script`
 - **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
-  plus the `godot://project/info` MCP resource
-- **Scenes:** `read_scene` / `get_scene_hierarchy`, `create_scene`, `add_node`,
-  `remove_node`, `modify_node_property`, `attach_script`, `instance_scene`
-- **Run/feedback:** `run_scene`, `stop_scene`, `get_errors`, `get_console_log`
+  plus MCP resources `godot://project/info`, `godot://scene/current`,
+  `godot://script/current`
+- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`,
+  `delete_node`, `modify_node` — all operate on the currently-open scene;
+  `create_node`, `delete_node`, and `modify_node` are registered as editor
+  undo/redo actions (Ctrl-Z works)
+- **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
+  `get_console_log` — not yet implemented
 
 Deferred to v2: in-game **runtime** tools (screenshot, input injection, live
 node query) — they need a second live connection from the running game.

@@ -39,7 +39,7 @@ TCP bytes → http_server.gd → http_message.gd (parse) → mcp_handler.handle_
 - **`http_server.gd`** — raw `TCPServer` loop. Accumulates bytes per client until headers + full `Content-Length` body arrive, then dispatches. Only `POST /mcp*` is served. **Connection: close per request** (no keep-alive, no SSE) — a v1 simplification the README justifies.
 - **`mcp_handler.gd`** — `handle_message(text) -> String` is the **single dispatch seam used by both the HTTP server and every handler test**. Returns `""` for notifications (server replies HTTP 202, no body). Handles `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`.
 - **`tool_registry.gd`** — holds `{name, description, inputSchema, handler: Callable}` entries. `call_tool` adapts the internal result contract to the MCP `tools/call` shape.
-- **`tools/*.gd`** — actual tool logic. The 6 v1 tools are wired up in `mcp_handler._build_default_registry()`.
+- **`tools/*.gd`** — actual tool logic. All 14 tools are wired up in `mcp_handler._build_default_registry()`.
 
 ## Conventions that matter
 
@@ -57,4 +57,4 @@ Tests subclass `tests/test_case.gd` (a `SceneTree` with `assert_*` helpers); any
 
 ## Scope
 
-v1 is the lean editor core (9 tools: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`), plus the MCP resource layer serving `godot://project/info`. Scene tools, run/feedback tools, and in-game runtime tools (screenshot, input injection) are planned but out of scope for v1 — see the README and `docs/superpowers/plans/`.
+v1 is the lean editor core (14 tools: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`, `get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`), plus the MCP resource layer serving `godot://project/info`, `godot://scene/current`, and `godot://script/current`. Run/feedback tools and in-game runtime tools (screenshot, input injection) remain out of scope for v1 — see the README and `docs/superpowers/plans/`.

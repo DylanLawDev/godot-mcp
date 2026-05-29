@@ -93,3 +93,36 @@ func test_resources_read_unknown_uri_errors() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":14,"method":"resources/read","params":{"uri":"godot://nope"}}'))
 	assert_eq(d["error"]["code"], -32602)
+
+func test_tools_list_includes_scene_tools() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":20,"method":"tools/list","params":{}}'))
+	var names := []
+	for t in d["result"]["tools"]:
+		names.append(t["name"])
+	for expected in ["get_scene_tree", "get_node_properties", "create_node", "delete_node", "modify_node"]:
+		assert_has(names, expected)
+
+func test_tools_call_get_scene_tree_reports_no_scene_headless() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"get_scene_tree","arguments":{}}}'))
+	assert_true(d["result"]["isError"])
+	assert_eq(d["result"]["content"][0]["text"], "No scene is currently open")
+
+func test_resources_list_includes_current_scene_and_script() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":22,"method":"resources/list","params":{}}'))
+	var uris := []
+	for r in d["result"]["resources"]:
+		uris.append(r["uri"])
+	assert_has(uris, "godot://scene/current")
+	assert_has(uris, "godot://script/current")
+
+func test_resources_read_scene_current_closed_headless() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":23,"method":"resources/read","params":{"uri":"godot://scene/current"}}'))
+	var c = d["result"]["contents"][0]
+	assert_eq(c["uri"], "godot://scene/current")
+	assert_eq(c["mimeType"], "application/json")
+	var body = JSON.parse_string(c["text"])
+	assert_eq(body["open"], false)

@@ -45,6 +45,7 @@ TCP bytes → http_server.gd → http_message.gd (parse) → mcp_handler.handle_
 
 - **Tool result contract:** every tool handler takes `(args: Dictionary)` and returns `{"ok": bool, "value": ...}` on success or `{"ok": false, "error": String}` on failure. `tool_registry` translates this into MCP `{content: [{type:"text", text}], isError}`. Non-string `value`s are `JSON.stringify`'d. Keep this shape when adding tools.
 - **Registering a new tool:** add the handler method to a `tools/*.gd` file, then `reg.register(name, description, inputSchema, Callable(instance, "method"))` in `_build_default_registry()`. Stash the tool instance via `reg.set_meta(...)` so it isn't garbage-collected (see the `_files`/`_scripts` metas).
+- **Resources:** MCP resources are served by `resource_registry.gd` (mirror of `tool_registry.gd`); register them in `mcp_handler._build_default_resource_registry()`. Resource handlers use the same `{ok, value/error}` contract as tools; the registry adapts the result into `{contents: [{uri, mimeType, text}]}`.
 - **Path safety:** all file/script tools must run user paths through `utils/paths.gd` `validate()`, which normalizes to `res://` and rejects `..` traversal. This is defense-in-depth, not the security boundary (the boundary is loopback + no auth in v1).
 - **`@tool` everywhere:** all addon scripts are `@tool` because they run inside the editor.
 - **Filesystem rescan:** after writing files, tools call `_rescan_filesystem()`, which is a no-op unless the live editor plugin is present in `Engine` metadata — this is what keeps tools testable headlessly.
@@ -56,4 +57,4 @@ Tests subclass `tests/test_case.gd` (a `SceneTree` with `assert_*` helpers); any
 
 ## Scope
 
-v1 is the lean editor core (currently 6 file/script tools: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `validate_script`). Scene tools, run/feedback tools, and in-game runtime tools (screenshot, input injection) are planned but out of scope for v1 — see the README and `docs/superpowers/plans/`.
+v1 is the lean editor core (9 tools: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`), plus the MCP resource layer serving `godot://project/info`. Scene tools, run/feedback tools, and in-game runtime tools (screenshot, input injection) are planned but out of scope for v1 — see the README and `docs/superpowers/plans/`.

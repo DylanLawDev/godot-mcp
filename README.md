@@ -78,6 +78,8 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
 
 - **Files/scripts:** `read_file`, `list_dir`, `search_project`, `create_script`,
   `edit_script`, `validate_script`
+- **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
+  plus the `godot://project/info` MCP resource
 - **Scenes:** `read_scene` / `get_scene_hierarchy`, `create_scene`, `add_node`,
   `remove_node`, `modify_node_property`, `attach_script`, `instance_scene`
 - **Run/feedback:** `run_scene`, `stop_scene`, `get_errors`, `get_console_log`

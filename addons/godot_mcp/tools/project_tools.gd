@@ -3,6 +3,7 @@ extends RefCounted
 
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 const _RESOURCE_EXTS := ["tres", "res", "tscn"]
+const _MAX_RESOURCES := 1000   # cap entries to bound large trees / symlink cycles
 
 func get_project_info(_args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": _project_info()}
@@ -85,6 +86,8 @@ func list_project_resources(args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": {"entries": entries}}
 
 func _collect_resources(dir_path: String, entries: Array) -> void:
+	if entries.size() >= _MAX_RESOURCES:
+		return
 	var d := DirAccess.open(dir_path)
 	if d == null:
 		return
@@ -96,18 +99,23 @@ func _collect_resources(dir_path: String, entries: Array) -> void:
 			_collect_resources(child, entries)
 		elif name.get_extension() in _RESOURCE_EXTS:
 			entries.append({"path": child, "type": _resource_type(child)})
+		if entries.size() >= _MAX_RESOURCES:
+			break
 		name = d.get_next()
 	d.list_dir_end()
 
 # Determine the resource/root class without load() — parse the text header.
+# Reads only a bounded chunk: text resources declare their type in the first line,
+# and binary .res files (no text header) must not be read in full.
 func _resource_type(path: String) -> String:
 	if path.get_extension() == "tscn":
 		return "PackedScene"
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return "Resource"
-	var first := f.get_line()
+	var head := f.get_buffer(256).get_string_from_utf8()
 	f = null
+	var first := head.split("\n")[0]
 	# Header looks like: [gd_resource type="Foo" load_steps=.. format=..]
 	var marker := 'type="'
 	var idx := first.find(marker)

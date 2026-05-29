@@ -1,0 +1,10 @@
+config_version=5
+
+[application]
+
+config/name="Godot MCP"
+config/features=PackedStringArray("4.6")
+
+[editor_plugins]
+
+enabled=PackedStringArray()

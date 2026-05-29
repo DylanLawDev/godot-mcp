@@ -2,6 +2,7 @@
 extends RefCounted
 
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
+const _RESOURCE_EXTS := ["tres", "res", "tscn"]
 
 func get_project_info(_args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": _project_info()}
@@ -73,3 +74,47 @@ func _author_settings() -> Variant:
 		for k in cfg.get_section_keys(section):
 			out[section + "/" + k] = cfg.get_value(section, k)
 	return out
+
+func list_project_resources(args: Dictionary) -> Dictionary:
+	var root := str(args.get("path", "res://"))
+	var v := Paths.validate(root)
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var entries := []
+	_collect_resources(v["path"], entries)
+	return {"ok": true, "value": {"entries": entries}}
+
+func _collect_resources(dir_path: String, entries: Array) -> void:
+	var d := DirAccess.open(dir_path)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		var child := dir_path.path_join(name)
+		if d.current_is_dir():
+			_collect_resources(child, entries)
+		elif name.get_extension() in _RESOURCE_EXTS:
+			entries.append({"path": child, "type": _resource_type(child)})
+		name = d.get_next()
+	d.list_dir_end()
+
+# Determine the resource/root class without load() — parse the text header.
+func _resource_type(path: String) -> String:
+	if path.get_extension() == "tscn":
+		return "PackedScene"
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return "Resource"
+	var first := f.get_line()
+	f = null
+	# Header looks like: [gd_resource type="Foo" load_steps=.. format=..]
+	var marker := 'type="'
+	var idx := first.find(marker)
+	if idx == -1:
+		return "Resource"
+	var start := idx + marker.length()
+	var end := first.find('"', start)
+	if end == -1:
+		return "Resource"
+	return first.substr(start, end - start)

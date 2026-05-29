@@ -51,3 +51,46 @@ func test_get_project_settings_prefix_filter() -> void:
 	assert_true(settings.has("application/config/name"))
 	for k in settings:
 		assert_true(str(k).begins_with("application/"))
+
+# Creates a scratch fixture tree, runs the body, then removes it.
+func _with_resource_fixtures(body: Callable) -> void:
+	var base := "res://_project_tools_test"
+	DirAccess.make_dir_recursive_absolute(base)
+	DirAccess.make_dir_recursive_absolute(base + "/nested")
+	var tres := FileAccess.open(base + "/env.tres", FileAccess.WRITE)
+	tres.store_string('[gd_resource type="Environment" format=3]\n\n[resource]\n')
+	tres = null
+	var scn := FileAccess.open(base + "/nested/level.tscn", FileAccess.WRITE)
+	scn.store_string("[gd_scene format=3]\n")
+	scn = null
+	var gd := FileAccess.open(base + "/script.gd", FileAccess.WRITE)
+	gd.store_string("extends Node\n")
+	gd = null
+	var txt := FileAccess.open(base + "/notes.txt", FileAccess.WRITE)
+	txt.store_string("hi\n")
+	txt = null
+	body.call()
+	for p in ["env.tres", "nested/level.tscn", "script.gd", "notes.txt"]:
+		DirAccess.remove_absolute(base + "/" + p)
+	DirAccess.remove_absolute(base + "/nested")
+	DirAccess.remove_absolute(base)
+
+func test_list_project_resources_filters_and_types() -> void:
+	_with_resource_fixtures(func ():
+		var pt = ProjectTools.new()
+		var r: Dictionary = pt.list_project_resources({"path": "_project_tools_test"})
+		assert_true(r["ok"])
+		var entries: Array = r["value"]["entries"]
+		var by_path := {}
+		for e in entries:
+			by_path[e["path"]] = e["type"]
+		# .gd and .txt are excluded.
+		assert_eq(entries.size(), 2)
+		assert_eq(by_path["res://_project_tools_test/env.tres"], "Environment")
+		assert_eq(by_path["res://_project_tools_test/nested/level.tscn"], "PackedScene")
+	)
+
+func test_list_project_resources_rejects_traversal() -> void:
+	var pt = ProjectTools.new()
+	var r: Dictionary = pt.list_project_resources({"path": "../escape"})
+	assert_false(r["ok"])

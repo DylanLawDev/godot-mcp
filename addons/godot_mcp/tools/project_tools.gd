@@ -39,3 +39,33 @@ func _autoloads() -> Array:
 		var path := raw.substr(1) if singleton else raw
 		out.append({"name": name, "path": path, "singleton": singleton})
 	return out
+
+func get_project_settings(args: Dictionary) -> Dictionary:
+	var settings := _author_settings()
+	if settings.is_empty():
+		return {"ok": false, "error": "Cannot load project.godot"}
+	var key := str(args.get("key", ""))
+	if key != "":
+		if not settings.has(key):
+			return {"ok": false, "error": "Setting not found: " + key}
+		return {"ok": true, "value": {"value": settings[key]}}
+	var prefix := str(args.get("prefix", ""))
+	if prefix != "":
+		var filtered := {}
+		for k in settings:
+			if str(k).begins_with(prefix):
+				filtered[k] = settings[k]
+		return {"ok": true, "value": filtered}
+	return {"ok": true, "value": settings}
+
+# Author-set settings = exactly what's written in project.godot (no engine defaults).
+func _author_settings() -> Dictionary:
+	var out := {}
+	var cfg := ConfigFile.new()
+	if cfg.load("res://project.godot") != OK:
+		return out
+	for section in cfg.get_sections():
+		for k in cfg.get_section_keys(section):
+			var full_key := (section + "/" + k) if section != "" else k
+			out[full_key] = cfg.get_value(section, k)
+	return out

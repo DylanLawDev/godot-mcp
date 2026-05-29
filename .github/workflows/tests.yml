@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  godot-headless-tests:
+    runs-on: ubuntu-latest
+    env:
+      # Match the Godot version the addon targets. Bump here to upgrade CI.
+      GODOT_VERSION: "4.6.1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: godot-bin
+          key: godot-${{ env.GODOT_VERSION }}-linux-x86_64
+
+      - name: Download Godot ${{ env.GODOT_VERSION }} (headless-capable)
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          url="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/${base}.zip"
+          echo "Downloading $url"
+          curl -fSL -o godot.zip "$url"
+          unzip -q godot.zip
+          mkdir -p godot-bin
+          mv "$base" godot-bin/godot
+          chmod +x godot-bin/godot
+
+      - name: Print Godot version
+        run: ./godot-bin/godot --version
+
+      - name: Warm up project import (generates .godot cache)
+        run: ./godot-bin/godot --headless --path . --import || true
+
+      - name: Run headless test suite
+        run: GODOT="$PWD/godot-bin/godot" ./addons/godot_mcp/run_tests.sh

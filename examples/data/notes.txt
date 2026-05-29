@@ -1,0 +1,14 @@
+Design notes for the example project
+=====================================
+
+This examples/ tree exists purely as fixtures for the Godot MCP file/script
+tools during manual end-to-end testing:
+
+- read_file        -> read any of these files
+- list_dir         -> list examples/ or examples/scripts/enemies/
+- search_project   -> search for "find_me" (two recursive hits across scripts)
+- validate_script  -> validate examples/scripts/player.gd
+- create_script /
+  edit_script      -> write/overwrite under examples/scratch/ (create it)
+
+find_me marker in notes.txt as well.

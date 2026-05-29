@@ -118,3 +118,32 @@ func test_make_node_validates_type() -> void:
 	# Not a Node (Resource) and a bogus class both reject:
 	assert_eq(st._make_node("Resource", ""), null)
 	assert_eq(st._make_node("NotARealClass", ""), null)
+
+func test_decode_props_separates_valid_and_unknown() -> void:
+	var st = SceneTools.new()
+	var n := Node2D.new()
+	var d: Dictionary = st._decode_props(n, {"position": var_to_str(Vector2(1, 2)), "bogus": "1"})
+	assert_eq(d["valid"].size(), 1)
+	assert_eq(d["valid"][0]["name"], "position")
+	assert_eq(d["valid"][0]["value"], Vector2(1, 2))
+	assert_eq(d["errors"].size(), 1)
+	assert_eq(d["errors"][0]["name"], "bogus")
+	n.free()
+
+func test_apply_props_reports_type_mismatch_as_error() -> void:
+	var st = SceneTools.new()
+	var n := Node2D.new()
+	# A String value cannot apply to a Vector2 property: Godot drops it silently.
+	var res: Dictionary = st._apply_props(n, {"position": var_to_str("hello")})
+	assert_eq(res["set"].size(), 0)
+	assert_eq(res["errors"].size(), 1)
+	assert_eq(res["errors"][0]["name"], "position")
+	n.free()
+
+func test_apply_props_allows_int_to_float_coercion() -> void:
+	var st = SceneTools.new()
+	var n := Node2D.new()
+	var res: Dictionary = st._apply_props(n, {"rotation": var_to_str(2)})  # rotation is float
+	assert_has(res["set"], "rotation")
+	assert_eq(res["errors"].size(), 0)
+	n.free()

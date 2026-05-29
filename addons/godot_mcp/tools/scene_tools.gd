@@ -79,16 +79,29 @@ func modify_node(args: Dictionary) -> Dictionary:
 	var node := _resolve(root, path)
 	if node == null:
 		return {"ok": false, "error": "Node not found: " + path}
-	var props: Dictionary = args.get("properties", {})
+	var props_arg = args.get("properties", {})
+	if typeof(props_arg) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "'properties' must be an object"}
+	var props: Dictionary = props_arg
 	var ur = _undo_redo()
-	if ur != null:
-		ur.create_action("MCP: modify node")
-		for name in props.keys():
-			ur.add_undo_property(node, name, node.get(name))
-		ur.commit_action()  # snapshot only; values applied below
-	var res := _apply_props(node, props)
-	res["path"] = path
-	return {"ok": true, "value": res}
+	if ur == null:
+		var res := _apply_props(node, props)
+		res["path"] = path
+		return {"ok": true, "value": res}
+	# Live editor: symmetric do/undo so BOTH undo and redo work; commit applies the do branch.
+	var decoded := _decode_props(node, props)
+	ur.create_action("MCP: modify node")
+	for item in decoded["valid"]:
+		ur.add_do_property(node, item["name"], item["value"])
+		ur.add_undo_property(node, item["name"], node.get(item["name"]))
+	ur.commit_action()
+	var done := []
+	for item in decoded["valid"]:
+		if _value_applied(node.get(item["name"]), item["value"]):
+			done.append(item["name"])
+		else:
+			decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
+	return {"ok": true, "value": {"path": path, "set": done, "errors": decoded["errors"]}}
 
 # --- Pure helpers ---
 
@@ -101,20 +114,44 @@ func _attach(parent: Node, child: Node, root: Node) -> void:
 func _detach(parent: Node, child: Node) -> void:
 	parent.remove_child(child)
 
-# Decode each value with str_to_var and set it. Returns {set:[names], errors:[{name,error}]}.
-func _apply_props(node: Node, props: Dictionary) -> Dictionary:
-	var valid := {}
+# Decode props into {valid: [{name, value}], errors: [{name, error}]}.
+# A name absent from the node's property list is an error; the rest decode via str_to_var.
+func _decode_props(node: Node, props: Dictionary) -> Dictionary:
+	var known := {}
 	for p in node.get_property_list():
-		valid[p["name"]] = true
-	var done := []
+		known[p["name"]] = true
+	var valid := []
 	var errors := []
 	for name in props.keys():
-		if not valid.has(name):
+		if not known.has(name):
 			errors.append({"name": name, "error": "No such property"})
 			continue
-		node.set(name, str_to_var(str(props[name])))
-		done.append(name)
-	return {"set": done, "errors": errors}
+		valid.append({"name": name, "value": str_to_var(str(props[name]))})
+	return {"valid": valid, "errors": errors}
+
+# Type-safe "did the set take?" check. Never compares mismatched Variant types with ==
+# (that raises a runtime error); allows int/float coercion.
+func _value_applied(current, intended) -> bool:
+	var tc := typeof(current)
+	var ti := typeof(intended)
+	if tc == ti:
+		return current == intended
+	if tc in [TYPE_INT, TYPE_FLOAT] and ti in [TYPE_INT, TYPE_FLOAT]:
+		return float(current) == float(intended)
+	return false
+
+# Set decoded values directly on the node, verifying each actually took.
+# Returns {set:[names], errors:[{name,error}]}. (Headless / no-undo path.)
+func _apply_props(node: Node, props: Dictionary) -> Dictionary:
+	var decoded := _decode_props(node, props)
+	var done := []
+	for item in decoded["valid"]:
+		node.set(item["name"], item["value"])
+		if _value_applied(node.get(item["name"]), item["value"]):
+			done.append(item["name"])
+		else:
+			decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
+	return {"set": done, "errors": decoded["errors"]}
 
 # Instantiate a Node subclass by class name, or null if invalid / not a Node.
 func _make_node(type: String, node_name: String) -> Node:

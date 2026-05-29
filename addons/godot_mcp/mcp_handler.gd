@@ -6,6 +6,7 @@ const ToolRegistry = preload("res://addons/godot_mcp/tool_registry.gd")
 const FileTools = preload("res://addons/godot_mcp/tools/file_tools.gd")
 const ScriptTools = preload("res://addons/godot_mcp/tools/script_tools.gd")
 const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
+const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
 const PROTOCOL_VERSION := "2025-06-18"
@@ -17,8 +18,9 @@ var _resources
 
 func _init(registry = null, resources = null) -> void:
 	var project = ProjectTools.new()
-	_registry = registry if registry != null else _build_default_registry(project)
-	_resources = resources if resources != null else _build_default_resource_registry(project)
+	var scene = SceneTools.new()
+	_registry = registry if registry != null else _build_default_registry(project, scene)
+	_resources = resources if resources != null else _build_default_resource_registry(project, scene)
 
 # Single seam for the HTTP server AND tests.
 # Returns the serialized JSON-RPC response, or "" for notifications (server replies 202, no body).
@@ -66,7 +68,7 @@ func _handle(req: Dictionary):
 				return null
 			return JsonRpc.error(id, -32601, "Method not found: " + method)
 
-func _build_default_registry(project = null):
+func _build_default_registry(project = null, scene = null):
 	var reg = ToolRegistry.new()
 	var files = FileTools.new()
 	var scripts = ScriptTools.new()
@@ -99,13 +101,31 @@ func _build_default_registry(project = null):
 	reg.register("get_project_info", "Get curated project metadata (name, version, autoloads, ...). No args.",
 		{"type": "object", "properties": {}},
 		Callable(project, "get_project_info"))
+	if scene == null:
+		scene = SceneTools.new()
+	reg.register("get_scene_tree", "Get the current edited scene's node tree. No args.",
+		{"type": "object", "properties": {}},
+		Callable(scene, "get_scene_tree"))
+	reg.register("get_node_properties", "Get a node's properties. Args: {path} (NodePath relative to scene root; '.' = root).",
+		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "get_node_properties"))
+	reg.register("create_node", "Create a node under a parent. Args: {parent_path, type, name?}.",
+		{"type": "object", "properties": {"parent_path": {"type": "string"}, "type": {"type": "string"}, "name": {"type": "string"}}, "required": ["parent_path", "type"]},
+		Callable(scene, "create_node"))
+	reg.register("delete_node", "Delete a node. Args: {path}.",
+		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "delete_node"))
+	reg.register("modify_node", "Set node properties (values are Godot var_to_str strings). Args: {path, properties}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "properties": {"type": "object"}}, "required": ["path", "properties"]},
+		Callable(scene, "modify_node"))
+	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.
 	reg.set_meta("_files", files)
 	reg.set_meta("_scripts", scripts)
 	return reg
 
-func _build_default_resource_registry(project = null):
+func _build_default_resource_registry(project = null, scene = null):
 	var rreg = ResourceRegistry.new()
 	if project == null:
 		project = ProjectTools.new()

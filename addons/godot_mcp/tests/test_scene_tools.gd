@@ -29,6 +29,10 @@ func test_duplicate_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.duplicate_node({"path": "Foo"})["ok"])
 
+func test_move_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.move_node({"path": "Foo", "new_parent_path": "."})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -227,4 +231,24 @@ func test_set_owner_recursive_covers_descendants() -> void:
 	assert_eq(dup.owner, root)
 	for c in dup.get_children():
 		assert_eq(c.owner, root)
+	root.free()
+
+# Task 1.3: reparenting moves a node under a new parent; owner stays the scene root.
+func test_reparent_keeps_owner() -> void:
+	var root := Node.new(); root.name = "Root"
+	var a := Node.new(); a.name = "A"; root.add_child(a); a.owner = root
+	var b := Node.new(); b.name = "B"; root.add_child(b); b.owner = root
+	a.reparent(b, false)
+	a.owner = root
+	assert_eq(a.get_parent(), b)
+	assert_eq(a.owner, root)
+	root.free()
+
+# Task 1.3: a node is an ancestor of its own descendant, so move_node's guard rejects it.
+func test_move_into_own_descendant_guard() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	assert_true(branch.is_ancestor_of(leaf))
 	root.free()

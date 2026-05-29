@@ -156,6 +156,39 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"path": str(root.get_path_to(dup))}}
 
+func move_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	if path == "" or path == ".":
+		return {"ok": false, "error": "Cannot move the scene root"}
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var new_parent_path := str(args.get("new_parent_path", ""))
+	var new_parent := _resolve(root, new_parent_path)
+	if new_parent == null:
+		return {"ok": false, "error": "New parent node not found: " + new_parent_path}
+	if node == new_parent or node.is_ancestor_of(new_parent):
+		return {"ok": false, "error": "Cannot move a node into itself or its own descendant"}
+	var keep := bool(args.get("keep_global_transform", true))
+	var old_parent := node.get_parent()
+	var old_index := node.get_index()
+	var ur = _undo_redo()
+	if ur == null:
+		node.reparent(new_parent, keep)
+		node.owner = root
+	else:
+		ur.create_action("MCP: move node")
+		ur.add_do_method(node, "reparent", new_parent, keep)
+		ur.add_do_property(node, "owner", root)
+		ur.add_undo_method(node, "reparent", old_parent, keep)
+		ur.add_undo_method(old_parent, "move_child", node, old_index)
+		ur.add_undo_property(node, "owner", root)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
+
 # --- Pure helpers ---
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.

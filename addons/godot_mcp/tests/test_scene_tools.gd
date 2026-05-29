@@ -25,6 +25,10 @@ func test_modify_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.modify_node({"path": ".", "properties": {}})["ok"])
 
+func test_duplicate_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.duplicate_node({"path": "Foo"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -209,4 +213,18 @@ func test_apply_props_on_attached_node() -> void:
 	assert_eq(n.position, Vector2(7, 8))
 	assert_has(res["set"], "position")
 	assert_eq(n.owner, root)
+	root.free()
+
+# Task 1.2: _set_owner_recursive roots an entire duplicated subtree at the scene root.
+func test_set_owner_recursive_covers_descendants() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")  # Branch -> Leaf
+	var dup: Node = branch.duplicate()
+	root.add_child(dup)
+	st._set_owner_recursive(dup, root)
+	assert_true(dup.get_child_count() > 0)
+	assert_eq(dup.owner, root)
+	for c in dup.get_children():
+		assert_eq(c.owner, root)
 	root.free()

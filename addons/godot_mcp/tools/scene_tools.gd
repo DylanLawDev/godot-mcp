@@ -127,7 +127,42 @@ func modify_node(args: Dictionary) -> Dictionary:
 			decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
 	return {"ok": true, "value": {"path": path, "set": done, "errors": decoded["errors"]}}
 
+func duplicate_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	if path == "" or path == ".":
+		return {"ok": false, "error": "Cannot duplicate the scene root"}
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var parent := node.get_parent()
+	var dup: Node = node.duplicate()
+	var new_name := str(args.get("new_name", ""))
+	if new_name != "":
+		dup.name = new_name
+	var ur = _undo_redo()
+	if ur == null:
+		parent.add_child(dup)
+		_set_owner_recursive(dup, root)
+	else:
+		ur.create_action("MCP: duplicate node")
+		ur.add_do_method(parent, "add_child", dup)
+		ur.add_do_method(self, "_set_owner_recursive", dup, root)
+		ur.add_do_reference(dup)
+		ur.add_undo_method(self, "_detach", parent, dup)
+		ur.add_undo_reference(dup)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": str(root.get_path_to(dup))}}
+
 # --- Pure helpers ---
+
+# Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.
+func _set_owner_recursive(node: Node, root: Node) -> void:
+	node.owner = root
+	for c in node.get_children():
+		_set_owner_recursive(c, root)
 
 # Add `child` under `parent` and root it at `root` so it persists when the scene is saved.
 func _attach(parent: Node, child: Node, root: Node) -> void:

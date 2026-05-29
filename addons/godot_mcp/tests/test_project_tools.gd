@@ -94,3 +94,30 @@ func test_list_project_resources_rejects_traversal() -> void:
 	var pt = ProjectTools.new()
 	var r: Dictionary = pt.list_project_resources({"path": "../escape"})
 	assert_false(r["ok"])
+
+# A path that passes validation but isn't a real directory must error, not
+# masquerade as a successful empty scan (mirrors list_dir).
+func test_list_project_resources_errors_on_missing_root() -> void:
+	var pt = ProjectTools.new()
+	var r: Dictionary = pt.list_project_resources({"path": "_project_tools_does_not_exist"})
+	assert_false(r["ok"])
+
+# A symlink cycle with no resource files must not recurse forever: the resource
+# cap can't trip on an empty cycle, so symlinked dirs are skipped outright.
+func test_list_project_resources_skips_symlink_cycles() -> void:
+	var base := "res://_project_tools_symlink_test"
+	DirAccess.make_dir_recursive_absolute(base)
+	var loop := base + "/loop"  # symlink pointing back to its own parent
+	var da := DirAccess.open(base)
+	var link_err := da.create_link(ProjectSettings.globalize_path(base), ProjectSettings.globalize_path(loop))
+	if link_err != OK:
+		# Filesystem doesn't support symlinks here — nothing to verify.
+		DirAccess.remove_absolute(base)
+		return
+	var pt = ProjectTools.new()
+	# Must terminate (no hang/overflow); the cycle contributes no resources.
+	var r: Dictionary = pt.list_project_resources({"path": "_project_tools_symlink_test"})
+	assert_true(r["ok"])
+	assert_eq(r["value"]["entries"].size(), 0)
+	DirAccess.remove_absolute(loop)
+	DirAccess.remove_absolute(base)

@@ -3,7 +3,7 @@ extends RefCounted
 
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 const _RESOURCE_EXTS := ["tres", "res", "tscn"]
-const _MAX_RESOURCES := 1000   # cap entries to bound large trees / symlink cycles
+const _MAX_RESOURCES := 1000   # cap entries to bound large trees (symlink cycles are skipped in _collect_resources)
 
 func get_project_info(_args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": _project_info()}
@@ -81,6 +81,10 @@ func list_project_resources(args: Dictionary) -> Dictionary:
 	var v := Paths.validate(root)
 	if not v["ok"]:
 		return {"ok": false, "error": v["error"]}
+	# Reject a misspelled / non-directory root rather than silently reporting an
+	# empty scan — matches list_dir, which errors on the same condition.
+	if DirAccess.open(v["path"]) == null:
+		return {"ok": false, "error": "Directory not found: " + v["path"]}
 	var entries := []
 	_collect_resources(v["path"], entries)
 	return {"ok": true, "value": {"entries": entries}}
@@ -96,7 +100,11 @@ func _collect_resources(dir_path: String, entries: Array) -> void:
 	while name != "":
 		var child := dir_path.path_join(name)
 		if d.current_is_dir():
-			_collect_resources(child, entries)
+			# Skip symlinked directories: a link back to an ancestor would cycle
+			# forever, since the _MAX_RESOURCES cap only counts resource files and
+			# a cycle with none never trips it.
+			if not d.is_link(child):
+				_collect_resources(child, entries)
 		elif name.get_extension() in _RESOURCE_EXTS:
 			entries.append({"path": child, "type": _resource_type(child)})
 		if entries.size() >= _MAX_RESOURCES:

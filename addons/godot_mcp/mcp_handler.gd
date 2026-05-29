@@ -5,15 +5,19 @@ const JsonRpc = preload("res://addons/godot_mcp/jsonrpc.gd")
 const ToolRegistry = preload("res://addons/godot_mcp/tool_registry.gd")
 const FileTools = preload("res://addons/godot_mcp/tools/file_tools.gd")
 const ScriptTools = preload("res://addons/godot_mcp/tools/script_tools.gd")
+const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
+const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
 const PROTOCOL_VERSION := "2025-06-18"
 const SERVER_NAME := "godot-mcp"
 const SERVER_VERSION := "0.1.0"
 
 var _registry
+var _resources
 
-func _init(registry = null) -> void:
+func _init(registry = null, resources = null) -> void:
 	_registry = registry if registry != null else _build_default_registry()
+	_resources = resources if resources != null else _build_default_resource_registry()
 
 # Single seam for the HTTP server AND tests.
 # Returns the serialized JSON-RPC response, or "" for notifications (server replies 202, no body).
@@ -36,7 +40,7 @@ func _handle(req: Dictionary):
 				pv = PROTOCOL_VERSION
 			return JsonRpc.result(id, {
 				"protocolVersion": pv,
-				"capabilities": {"tools": {}},
+				"capabilities": {"tools": {}, "resources": {}},
 				"serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
 			})
 		"notifications/initialized":
@@ -48,6 +52,14 @@ func _handle(req: Dictionary):
 		"tools/call":
 			var p: Dictionary = req["params"]
 			return JsonRpc.result(id, _registry.call_tool(str(p.get("name", "")), p.get("arguments", {})))
+		"resources/list":
+			return JsonRpc.result(id, {"resources": _resources.list_resources()})
+		"resources/read":
+			var rp: Dictionary = req["params"]
+			var uri := str(rp.get("uri", ""))
+			if not _resources.has(uri):
+				return JsonRpc.error(id, -32602, "Unknown resource: " + uri)
+			return JsonRpc.result(id, _resources.read_resource(uri))
 		_:
 			if req["is_notification"]:
 				return null
@@ -75,7 +87,27 @@ func _build_default_registry():
 	reg.register("validate_script", "Validate GDScript syntax. Args: {content} or {path}.",
 		{"type": "object", "properties": {"content": {"type": "string"}, "path": {"type": "string"}}},
 		Callable(scripts, "validate_script"))
+	var project = ProjectTools.new()
+	reg.register("get_project_settings", "Get author-set project settings. Args: {key?, prefix?}.",
+		{"type": "object", "properties": {"key": {"type": "string"}, "prefix": {"type": "string"}}},
+		Callable(project, "get_project_settings"))
+	reg.register("list_project_resources", "List Godot resource files (.tres/.res/.tscn). Args: {path?}.",
+		{"type": "object", "properties": {"path": {"type": "string"}}},
+		Callable(project, "list_project_resources"))
+	reg.register("get_project_info", "Get curated project metadata (name, version, autoloads, ...). No args.",
+		{"type": "object", "properties": {}},
+		Callable(project, "get_project_info"))
+	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.
 	reg.set_meta("_files", files)
 	reg.set_meta("_scripts", scripts)
 	return reg
+
+func _build_default_resource_registry():
+	var rreg = ResourceRegistry.new()
+	var project = ProjectTools.new()
+	rreg.register("godot://project/info", "project_info",
+		"Project metadata and settings.", "application/json",
+		Callable(project, "get_project_info"))
+	rreg.set_meta("_project", project)
+	return rreg

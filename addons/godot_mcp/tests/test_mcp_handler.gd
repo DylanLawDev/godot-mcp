@@ -57,3 +57,39 @@ func test_invalid_json_returns_parse_error() -> void:
 	var d := _parse(h.handle_message("{not json"))
 	assert_eq(d["error"]["code"], -32700)
 	assert_eq(d["id"], null)
+
+func test_initialize_advertises_resources_capability() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":10,"method":"initialize","params":{}}'))
+	assert_true(d["result"]["capabilities"].has("resources"))
+
+func test_tools_list_includes_project_tools() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":11,"method":"tools/list","params":{}}'))
+	var names := []
+	for t in d["result"]["tools"]:
+		names.append(t["name"])
+	for expected in ["get_project_settings", "list_project_resources", "get_project_info"]:
+		assert_has(names, expected)
+
+func test_resources_list_includes_project_info() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":12,"method":"resources/list","params":{}}'))
+	var uris := []
+	for r in d["result"]["resources"]:
+		uris.append(r["uri"])
+	assert_has(uris, "godot://project/info")
+
+func test_resources_read_project_info_round_trip() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":13,"method":"resources/read","params":{"uri":"godot://project/info"}}'))
+	var c = d["result"]["contents"][0]
+	assert_eq(c["uri"], "godot://project/info")
+	assert_eq(c["mimeType"], "application/json")
+	var info = JSON.parse_string(c["text"])
+	assert_eq(info["name"], "Godot MCP")
+
+func test_resources_read_unknown_uri_errors() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":14,"method":"resources/read","params":{"uri":"godot://nope"}}'))
+	assert_eq(d["error"]["code"], -32602)

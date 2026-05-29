@@ -37,16 +37,38 @@ func create_node(args: Dictionary) -> Dictionary:
 	var node := _make_node(type, str(args.get("name", type)))
 	if node == null:
 		return {"ok": false, "error": "Invalid node type: " + type}
+	var props_arg = args.get("properties", {})
+	if typeof(props_arg) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "'properties' must be an object"}
+	var props: Dictionary = props_arg
 	var ur = _undo_redo()
+	var applied := {"set": [], "errors": []}
 	if ur == null:
 		_attach(parent, node, root)
+		if not props.is_empty():
+			applied = _apply_props(node, props)
 	else:
+		# Decode against the fresh instance so the property list is known before attach.
+		var decoded := _decode_props(node, props)
 		ur.create_action("MCP: create node")
 		ur.add_do_method(self, "_attach", parent, node, root)
 		ur.add_do_reference(node)
+		for item in decoded["valid"]:
+			ur.add_do_property(node, item["name"], item["value"])
 		ur.add_undo_method(self, "_detach", parent, node)
 		ur.commit_action()
-	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
+		var done := []
+		for item in decoded["valid"]:
+			if _value_applied(node.get(item["name"]), item["value"]):
+				done.append(item["name"])
+			else:
+				decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
+		applied = {"set": done, "errors": decoded["errors"]}
+	return {"ok": true, "value": {
+		"path": str(root.get_path_to(node)),
+		"set": applied["set"],
+		"errors": applied["errors"],
+	}}
 
 func delete_node(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()

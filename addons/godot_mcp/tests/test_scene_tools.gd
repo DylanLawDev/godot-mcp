@@ -196,3 +196,17 @@ func test_capture_and_restore_owners_and_index() -> void:
 	assert_eq(MID.owner, R)
 	assert_eq(GC.owner, R)
 	R.free()
+
+# Task 1.1: create_node's property application is factored into _apply_props (reused
+# from modify_node). A newly-attached node with props gets them set and owned by root.
+func test_apply_props_on_attached_node() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var n := Node2D.new()
+	n.name = "Made"
+	st._attach(root, n, root)
+	var res: Dictionary = st._apply_props(n, {"position": var_to_str(Vector2(7, 8))})
+	assert_eq(n.position, Vector2(7, 8))
+	assert_has(res["set"], "position")
+	assert_eq(n.owner, root)
+	root.free()

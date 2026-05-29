@@ -21,7 +21,7 @@ func _project_info() -> Dictionary:
 	var icon := str(ProjectSettings.get_setting("application/config/icon", ""))
 	if icon != "":
 		info["icon"] = icon
-	info["features"] = ProjectSettings.get_setting("application/config/features", PackedStringArray())
+	info["features"] = Array(ProjectSettings.get_setting("application/config/features", PackedStringArray()))
 	info["godot_version"] = Engine.get_version_info().get("string", "")
 	info["autoloads"] = _autoloads()
 	return info

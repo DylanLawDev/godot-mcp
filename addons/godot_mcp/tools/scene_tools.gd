@@ -64,9 +64,11 @@ func delete_node(args: Dictionary) -> Dictionary:
 		_detach(parent, node)
 		node.free()
 	else:
+		var index := node.get_index()
+		var owners := _capture_owners(node)
 		ur.create_action("MCP: delete node")
 		ur.add_do_method(self, "_detach", parent, node)
-		ur.add_undo_method(self, "_attach", parent, node, root)
+		ur.add_undo_method(self, "_restore", parent, node, index, owners)
 		ur.add_undo_reference(node)
 		ur.commit_action()
 	return {"ok": true, "value": {"deleted": path}}
@@ -113,6 +115,23 @@ func _attach(parent: Node, child: Node, root: Node) -> void:
 # Remove `child` from `parent` WITHOUT freeing it (the caller / undo history owns it).
 func _detach(parent: Node, child: Node) -> void:
 	parent.remove_child(child)
+
+# Snapshot {node, owner} for `node` and every descendant, taken before a delete so
+# the undo can restore subtree ownership (Godot clears owner when a node leaves the
+# tree, which would otherwise drop ownerless grandchildren on the next save).
+func _capture_owners(node: Node) -> Array:
+	var out := [{"node": node, "owner": node.owner}]
+	for c in node.get_children():
+		out.append_array(_capture_owners(c))
+	return out
+
+# Undo of a delete: re-insert `node` under `parent` at its original sibling `index`
+# and restore every captured owner across the subtree.
+func _restore(parent: Node, node: Node, index: int, owners: Array) -> void:
+	parent.add_child(node)
+	parent.move_child(node, index)
+	for e in owners:
+		e["node"].owner = e["owner"]
 
 # Decode props into {valid: [{name, value}], errors: [{name, error}]}.
 # A name absent from the node's property list is an error; the rest decode via str_to_var.
@@ -171,7 +190,14 @@ func _make_node(type: String, node_name: String) -> Node:
 func _resolve(root: Node, path: String) -> Node:
 	if path == "" or path == ".":
 		return root
-	return root.get_node_or_null(NodePath(path))
+	# Reject paths that escape the edited scene: absolute paths (/root/...) and
+	# any path (e.g. "..") that resolves to a node outside the scene subtree.
+	if NodePath(path).is_absolute():
+		return null
+	var node := root.get_node_or_null(NodePath(path))
+	if node == null or (node != root and not root.is_ancestor_of(node)):
+		return null
+	return node
 
 # All entries of get_property_list() except category/group/subgroup separators,
 # each value encoded with var_to_str so it survives the JSON boundary.

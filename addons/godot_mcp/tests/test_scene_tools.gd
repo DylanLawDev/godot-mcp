@@ -159,3 +159,40 @@ func test_script_current_resource_reports_closed_headless() -> void:
 	var r: Dictionary = st.script_current({})
 	assert_true(r["ok"])
 	assert_eq(r["value"], {"open": false})
+
+# A NodePath that escapes the edited scene (e.g. "..") must not resolve to an
+# outside node, even when the scene root has a parent (as it does in the editor).
+func test_resolve_rejects_parent_escape() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var outer := Node.new()
+	outer.add_child(root)  # give root a parent so ".." resolves outside the scene
+	assert_eq(st._resolve(root, ".."), null)
+	outer.free()  # frees root + its subtree too
+
+func test_resolve_rejects_absolute_path() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	assert_eq(st._resolve(root, "/root"), null)
+	root.free()
+
+# Deleting a middle child and undoing must restore its sibling index AND the
+# ownership of the whole removed subtree (Godot may clear owner on tree-exit).
+func test_capture_and_restore_owners_and_index() -> void:
+	var st = SceneTools.new()
+	var R := Node.new(); R.name = "R"
+	var A0 := Node.new(); A0.name = "A0"; R.add_child(A0); A0.owner = R
+	var MID := Node.new(); MID.name = "MID"; R.add_child(MID); MID.owner = R
+	var GC := Node.new(); GC.name = "GC"; MID.add_child(GC); GC.owner = R
+	var A2 := Node.new(); A2.name = "A2"; R.add_child(A2); A2.owner = R
+	var idx := MID.get_index()  # 1
+	var owners := st._capture_owners(MID)
+	# Simulate the live-editor delete: subtree leaves the tree and loses owners.
+	R.remove_child(MID)
+	MID.owner = null
+	GC.owner = null
+	st._restore(R, MID, idx, owners)
+	assert_eq(MID.get_index(), 1)
+	assert_eq(MID.owner, R)
+	assert_eq(GC.owner, R)
+	R.free()

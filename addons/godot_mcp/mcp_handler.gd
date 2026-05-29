@@ -16,8 +16,9 @@ var _registry
 var _resources
 
 func _init(registry = null, resources = null) -> void:
-	_registry = registry if registry != null else _build_default_registry()
-	_resources = resources if resources != null else _build_default_resource_registry()
+	var project = ProjectTools.new()
+	_registry = registry if registry != null else _build_default_registry(project)
+	_resources = resources if resources != null else _build_default_resource_registry(project)
 
 # Single seam for the HTTP server AND tests.
 # Returns the serialized JSON-RPC response, or "" for notifications (server replies 202, no body).
@@ -65,7 +66,7 @@ func _handle(req: Dictionary):
 				return null
 			return JsonRpc.error(id, -32601, "Method not found: " + method)
 
-func _build_default_registry():
+func _build_default_registry(project = null):
 	var reg = ToolRegistry.new()
 	var files = FileTools.new()
 	var scripts = ScriptTools.new()
@@ -87,7 +88,8 @@ func _build_default_registry():
 	reg.register("validate_script", "Validate GDScript syntax. Args: {content} or {path}.",
 		{"type": "object", "properties": {"content": {"type": "string"}, "path": {"type": "string"}}},
 		Callable(scripts, "validate_script"))
-	var project = ProjectTools.new()
+	if project == null:
+		project = ProjectTools.new()
 	reg.register("get_project_settings", "Get author-set project settings. Args: {key?, prefix?}.",
 		{"type": "object", "properties": {"key": {"type": "string"}, "prefix": {"type": "string"}}},
 		Callable(project, "get_project_settings"))
@@ -103,9 +105,10 @@ func _build_default_registry():
 	reg.set_meta("_scripts", scripts)
 	return reg
 
-func _build_default_resource_registry():
+func _build_default_resource_registry(project = null):
 	var rreg = ResourceRegistry.new()
-	var project = ProjectTools.new()
+	if project == null:
+		project = ProjectTools.new()
 	rreg.register("godot://project/info", "project_info",
 		"Project metadata and settings.", "application/json",
 		Callable(project, "get_project_info"))

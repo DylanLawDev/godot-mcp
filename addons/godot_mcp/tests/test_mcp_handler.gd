@@ -28,7 +28,7 @@ func test_ping_returns_empty_result_object() -> void:
 	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":3,"method":"ping"}'))
 	assert_eq(d["result"], {})
 
-func test_tools_list_includes_all_six_tools() -> void:
+func test_tools_list_includes_file_and_script_tools() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}'))
 	var names := []

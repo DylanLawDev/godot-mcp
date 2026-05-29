@@ -72,3 +72,30 @@ func test_validate_script_from_file() -> void:
 	assert_true(r["ok"], str(r))
 	assert_true(r["value"]["valid"])
 	_teardown()
+
+func test_strip_class_name_blanks_declaration_preserving_lines() -> void:
+	var src := "@tool\nclass_name Foo\nextends Node\n"
+	var out: String = ScriptTools._strip_class_name(src)
+	# Line count is preserved (declaration line blanked, not deleted).
+	assert_eq(out.split("\n").size(), src.split("\n").size())
+	assert_false("class_name" in out)
+	assert_has(out, "@tool")
+	assert_has(out, "extends Node")
+
+func test_strip_class_name_noop_without_declaration() -> void:
+	var src := "extends Node\nfunc _ready():\n\tpass\n"
+	assert_eq(ScriptTools._strip_class_name(src), src)
+
+func test_validate_script_with_class_name_stays_valid() -> void:
+	var r = ScriptTools.new().validate_script({"content": "class_name McpFixtureValid\nextends Node\nfunc _ready():\n\tprint(1)\n"})
+	assert_true(r["ok"], str(r))
+	assert_true(r["value"]["valid"], str(r))
+
+func test_validate_script_class_name_with_error_keeps_correct_line() -> void:
+	# class_name on line 1, parse error on line 3 — stripping must blank line 1,
+	# not delete it, so the reported error line is not shifted.
+	var r = ScriptTools.new().validate_script({"content": "class_name McpFixtureErr\nextends Node\nfunc bad(\n\tpass\n"})
+	assert_true(r["ok"], str(r))
+	assert_false(r["value"]["valid"])
+	assert_true(r["value"]["errors"].size() >= 1)
+	assert_true(r["value"]["errors"][0]["line"] >= 3)

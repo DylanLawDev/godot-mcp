@@ -148,8 +148,10 @@ Press **Ctrl-Z** — it should reappear.
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":25,"method":"resources/read","params":{"uri":"godot://scene/current"}}'
 ```
-Expect: `result.contents[0].text` contains JSON with an `open:true` field,
-the scene path, and a `tree` object matching the live scene hierarchy.
+Expect: `result.contents[0].text` contains JSON with a `path` field (the
+open scene's file path, empty string for an unsaved scene) and a `tree` object
+matching the live scene hierarchy. When no scene is open the body is
+`{"open":false}` instead.
 
 **resources/read — godot://script/current** — MCP resource for the open script.
 First open `examples/scripts/player.gd` in the editor script tab, then:
@@ -157,9 +159,9 @@ First open `examples/scripts/player.gd` in the editor script tab, then:
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":26,"method":"resources/read","params":{"uri":"godot://script/current"}}'
 ```
-Expect: `result.contents[0].text` contains JSON with `open:true`, a `path`
-pointing to `player.gd`, and the full script source in a `source` field.
-Close the script tab (no script open) and repeat — expect `{"open":false}`.
+Expect: `result.contents[0].text` contains JSON with a `path` field pointing
+to `player.gd` and the full script source in a `content` field. When no script
+is open the body is `{"open":false}` instead.
 
 ## 5. Connect Claude Code
 

@@ -76,3 +76,45 @@ func test_encode_props_includes_value_and_skips_separators() -> void:
 	# Category/group separator rows (e.g. "Node2D", "Transform") are not real props.
 	assert_false(props.has("Node2D"))
 	n.free()
+
+func test_attach_sets_parent_and_owner() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var n := Node.new()
+	n.name = "New"
+	st._attach(root, n, root)
+	assert_eq(n.get_parent(), root)
+	assert_eq(n.owner, root)
+	root.free()
+
+func test_detach_removes_child() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var parent := leaf.get_parent()
+	st._detach(parent, leaf)
+	assert_eq(leaf.get_parent(), null)
+	assert_eq(parent.get_child_count(), 0)
+	leaf.free()  # _detach does not free; we own it now
+	root.free()
+
+func test_apply_props_sets_known_reports_unknown() -> void:
+	var st = SceneTools.new()
+	var n := Node2D.new()
+	var res: Dictionary = st._apply_props(n, {"position": var_to_str(Vector2(5, 6)), "bogus_xyz": "1"})
+	assert_eq(n.position, Vector2(5, 6))
+	assert_has(res["set"], "position")
+	assert_eq(res["errors"].size(), 1)
+	assert_eq(res["errors"][0]["name"], "bogus_xyz")
+	n.free()
+
+func test_make_node_validates_type() -> void:
+	var st = SceneTools.new()
+	# Valid instantiable Node subclass:
+	var ok_node := st._make_node("Node2D", "Thing")
+	assert_ne(ok_node, null)
+	assert_eq(ok_node.name, "Thing")
+	ok_node.free()
+	# Not a Node (Resource) and a bogus class both reject:
+	assert_eq(st._make_node("Resource", ""), null)
+	assert_eq(st._make_node("NotARealClass", ""), null)

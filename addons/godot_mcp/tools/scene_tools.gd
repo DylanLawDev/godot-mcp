@@ -11,11 +11,19 @@ func get_scene_tree(_args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": _NO_SCENE}
 	return {"ok": true, "value": {"tree": _serialize_tree(root, root)}}
 
-func get_node_properties(_args: Dictionary) -> Dictionary:
+func get_node_properties(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
 	if root == null:
 		return {"ok": false, "error": _NO_SCENE}
-	return {"ok": false, "error": "not implemented"}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	return {"ok": true, "value": {
+		"path": path,
+		"type": node.get_class(),
+		"properties": _encode_props(node),
+	}}
 
 func create_node(_args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
@@ -36,6 +44,24 @@ func modify_node(_args: Dictionary) -> Dictionary:
 	return {"ok": false, "error": "not implemented"}
 
 # --- Pure helpers ---
+
+# Map a root-relative NodePath string to a Node (or null). "." -> root.
+func _resolve(root: Node, path: String) -> Node:
+	if path == "" or path == ".":
+		return root
+	return root.get_node_or_null(NodePath(path))
+
+# All entries of get_property_list() except category/group/subgroup separators,
+# each value encoded with var_to_str so it survives the JSON boundary.
+func _encode_props(node: Node) -> Dictionary:
+	var skip := PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP
+	var out := {}
+	for p in node.get_property_list():
+		if int(p["usage"]) & skip:
+			continue
+		var name: String = p["name"]
+		out[name] = var_to_str(node.get(name))
+	return out
 
 # Recursively serialize `node`'s subtree. `path` is relative to `root` ("." for root).
 func _serialize_tree(node: Node, root: Node) -> Dictionary:

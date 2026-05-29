@@ -56,3 +56,23 @@ func test_serialize_tree_shape_and_paths() -> void:
 	var branch: Dictionary = tree["children"][1]
 	assert_eq(branch["children"][0]["path"], "Branch/Leaf")
 	root.free()
+
+func test_resolve_root_and_nested_and_missing() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	assert_eq(st._resolve(root, "."), root)
+	assert_eq(st._resolve(root, "Branch/Leaf").name, "Leaf")
+	assert_eq(st._resolve(root, "Nope/Missing"), null)
+	root.free()
+
+func test_encode_props_includes_value_and_skips_separators() -> void:
+	var st = SceneTools.new()
+	var n := Node2D.new()
+	n.position = Vector2(3, 4)
+	var props: Dictionary = st._encode_props(n)
+	# position round-trips through var_to_str
+	assert_true(props.has("position"))
+	assert_eq(props["position"], var_to_str(Vector2(3, 4)))
+	# Category/group separator rows (e.g. "Node2D", "Transform") are not real props.
+	assert_false(props.has("Node2D"))
+	n.free()

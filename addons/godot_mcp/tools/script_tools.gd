@@ -57,10 +57,23 @@ func validate_script(args: Dictionary) -> Dictionary:
 	var cap := _CaptureLogger.new()
 	OS.add_logger(cap)
 	var gd := GDScript.new()
-	gd.source_code = src
+	# Strip any top-level `class_name` so this detached compile doesn't collide with
+	# the same class already registered globally from the on-disk file (which the
+	# editor reports as "Class X hides a global script class"). See issue: false
+	# negative when validating existing files that declare a class_name.
+	gd.source_code = _strip_class_name(src)
 	var err := gd.reload()
 	OS.remove_logger(cap)
 	return {"ok": true, "value": {"valid": err == OK, "errors": cap.errors}}
+
+# Blank out a top-level `class_name X` declaration (preserving line numbers) so it
+# is not re-registered during the validation compile. No-op when none is present.
+static func _strip_class_name(src: String) -> String:
+	var lines := src.split("\n")
+	for i in lines.size():
+		if lines[i].strip_edges().begins_with("class_name "):
+			lines[i] = ""
+	return "\n".join(lines)
 
 # Only meaningful inside a live editor; the plugin registers itself in Engine metadata (Task 10).
 func _rescan_filesystem() -> void:

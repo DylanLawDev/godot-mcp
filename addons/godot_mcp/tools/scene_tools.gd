@@ -189,6 +189,29 @@ func move_node(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
 
+func rename_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var new_name := str(args.get("name", ""))
+	if new_name.strip_edges() == "":
+		return {"ok": false, "error": "Name must not be empty"}
+	var old_name := str(node.name)
+	var ur = _undo_redo()
+	if ur == null:
+		node.name = new_name
+	else:
+		ur.create_action("MCP: rename node")
+		ur.add_do_property(node, "name", new_name)
+		ur.add_undo_property(node, "name", old_name)
+		ur.commit_action()
+	# Godot may de-duplicate names, so report the actual resulting name.
+	return {"ok": true, "value": {"path": str(root.get_path_to(node)), "name": str(node.name)}}
+
 # --- Pure helpers ---
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.

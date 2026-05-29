@@ -33,6 +33,10 @@ func test_move_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.move_node({"path": "Foo", "new_parent_path": "."})["ok"])
 
+func test_rename_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.rename_node({"path": "Foo", "name": "Bar"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -251,4 +255,13 @@ func test_move_into_own_descendant_guard() -> void:
 	var branch := st._resolve(root, "Branch")
 	var leaf := st._resolve(root, "Branch/Leaf")
 	assert_true(branch.is_ancestor_of(leaf))
+	root.free()
+
+# Task 1.4: renaming sets the node name (we read it back since Godot may de-dup).
+func test_rename_sets_node_name() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var leaf := st._resolve(root, "Branch/Leaf")
+	leaf.name = "Renamed"
+	assert_eq(str(leaf.name), "Renamed")
 	root.free()

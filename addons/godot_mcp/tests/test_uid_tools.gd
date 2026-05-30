@@ -119,18 +119,52 @@ func _snapshot_resources(dir: String, out: Dictionary) -> void:
 		name = d.get_next()
 	d.list_dir_end()
 
+# Walk `dir` recursively and collect the path of every .uid file into `out` (a Dictionary
+# used as a set: keys are paths, values are true). Skips symlinked dirs.
+func _snapshot_uid_paths(dir: String, out: Dictionary) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name != "." and name != "..":
+			var full := dir.path_join(name)
+			if d.current_is_dir():
+				if not d.is_link(full):
+					_snapshot_uid_paths(full, out)
+			elif name.ends_with(".uid"):
+				out[full] = true
+		name = d.get_next()
+	d.list_dir_end()
+
 func test_update_project_uids_default_path_runs_without_error() -> void:
 	# Call with NO args to exercise the args.get("path", "res://") default branch.
 	# This walks the real project tree (res://); it may resave tracked files. Snapshot
 	# all resource bytes beforehand and restore them afterward so the working tree is
 	# left byte-identical regardless of what resources exist in the project.
+	# Also snapshot existing .uid sidecar paths so any new ones created by the resave
+	# can be detected and deleted, keeping the working tree clean.
 	var snapshot: Dictionary = {}
 	_snapshot_resources("res://", snapshot)
+	var uid_before: Dictionary = {}
+	_snapshot_uid_paths("res://", uid_before)
 	var r := UidTools.new().update_project_uids({})
+	# Restore all resource bytes to their pre-call state.
 	for path: String in snapshot:
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		f.store_buffer(snapshot[path])
 		f = null
+	# Remove any .uid sidecar files that were created during the tool call.
+	var uid_after: Dictionary = {}
+	_snapshot_uid_paths("res://", uid_after)
+	for uid_path: String in uid_after:
+		if not uid_before.has(uid_path):
+			DirAccess.remove_absolute(uid_path)
+	# Assert: the .uid set is back to its pre-call state (no strays remain).
+	var uid_final: Dictionary = {}
+	_snapshot_uid_paths("res://", uid_final)
+	assert_eq(uid_final.size(), uid_before.size(), "uid sidecar set must be identical after restore")
 	assert_true(r["ok"], str(r))
 	var v: Dictionary = r["value"]
 	assert_true(v.has("scanned"), str(v))
@@ -140,7 +174,7 @@ func test_update_project_uids_default_path_runs_without_error() -> void:
 
 func test_update_project_uids_counts_valid_resources() -> void:
 	_setup()
-	# Write two valid resources and one invalid .tscn.
+	# Write two valid .tres resources.
 	assert_true(_write_resource(SANDBOX + "/a.tres"), "save a.tres")
 	assert_true(_write_resource(SANDBOX + "/b.tres"), "save b.tres")
 	var r := UidTools.new().update_project_uids({"path": SANDBOX})

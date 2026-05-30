@@ -29,6 +29,7 @@ func update_project_uids(args: Dictionary) -> Dictionary:
 	var counts := [0, 0]
 	var failed: Array = []
 	_walk_uids(root, counts, failed)
+	_rescan_filesystem()
 	return {"ok": true, "value": {"scanned": counts[0], "resaved": counts[1], "failed": failed}}
 
 # Recursively walk `dir` for .tscn/.tres/.res files, reload+resave each.
@@ -53,7 +54,7 @@ func _walk_uids(dir: String, counts: Array, failed: Array) -> void:
 				_walk_uids(full, counts, failed)
 		elif name.ends_with(".tscn") or name.ends_with(".tres") or name.ends_with(".res"):
 			counts[0] += 1
-			var res = ResourceLoader.load(full)
+			var res: Resource = ResourceLoader.load(full)
 			if res == null:
 				failed.append({"path": full, "error": "ResourceLoader.load returned null"})
 			else:
@@ -64,3 +65,11 @@ func _walk_uids(dir: String, counts: Array, failed: Array) -> void:
 					counts[1] += 1
 		name = d.get_next()
 	d.list_dir_end()
+
+# Only meaningful inside a live editor; the plugin registers itself in Engine metadata.
+func _rescan_filesystem() -> void:
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	var ei = plugin.get_editor_interface()
+	ei.get_resource_filesystem().scan()

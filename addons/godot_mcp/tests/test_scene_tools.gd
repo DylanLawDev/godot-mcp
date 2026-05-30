@@ -415,3 +415,50 @@ func test_rename_sets_node_name() -> void:
 	leaf.name = "Renamed"
 	assert_eq(str(leaf.name), "Renamed")
 	root.free()
+
+# Review fix (PR #5): move_node must preserve a node's existing owner when that owner
+# is still a valid ancestor after the move, and only fall back to root otherwise.
+func test_move_owner_preserves_valid_owner() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	# Owner == root, moving Leaf under Child (still under root) -> root stays the owner.
+	var child := st._resolve(root, "Child")
+	assert_eq(st._move_owner(root, child, root), root)
+	# Owner is an ancestor of the new parent -> preserved (Branch owns, move under Branch).
+	assert_eq(st._move_owner(branch, branch, root), branch)
+	# Ownerless node -> falls back to root so it still serializes.
+	assert_eq(st._move_owner(null, child, root), root)
+	# Owner that is NOT an ancestor of the new parent -> falls back to root.
+	assert_eq(st._move_owner(leaf, child, root), root)
+	root.free()
+
+# Review fix (PR #5): duplicate_node must reject a copy that silently lost a script.
+func test_scripts_preserved_detects_dropped_script() -> void:
+	var st = SceneTools.new()
+	var s := GDScript.new()
+	s.source_code = "extends Node"
+	s.reload()
+	var orig := Node.new()
+	orig.set_script(s)
+	var dup := Node.new()  # the "duplicate" lost the script
+	assert_false(st._scripts_preserved(orig, dup))
+	# A faithful copy (same script on both) passes.
+	var dup2 := Node.new()
+	dup2.set_script(s)
+	assert_true(st._scripts_preserved(orig, dup2))
+	# Scriptless on both sides is fine.
+	var bare_a := Node.new()
+	var bare_b := Node.new()
+	assert_true(st._scripts_preserved(bare_a, bare_b))
+	orig.free(); dup.free(); dup2.free(); bare_a.free(); bare_b.free()
+
+# Review fix (PR #5): a child-count mismatch in the subtree also fails the check.
+func test_scripts_preserved_checks_subtree_shape() -> void:
+	var st = SceneTools.new()
+	var orig := Node.new()
+	orig.add_child(Node.new())
+	var dup := Node.new()  # no children
+	assert_false(st._scripts_preserved(orig, dup))
+	orig.free(); dup.free()

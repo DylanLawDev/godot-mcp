@@ -140,6 +140,12 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Node not found: " + path}
 	var parent := node.get_parent()
 	var dup: Node = node.duplicate()
+	# Godot's duplicate() silently drops a node's script when that script's _init()
+	# declares required parameters, yielding a behaviorless copy. Detect that and fail
+	# loudly rather than committing a broken node the caller thinks is a faithful clone.
+	if not _scripts_preserved(node, dup):
+		dup.free()
+		return {"ok": false, "error": "Cannot duplicate: an attached script was dropped by duplicate() (its _init() likely requires parameters)"}
 	var new_name := str(args.get("new_name", ""))
 	if new_name != "":
 		dup.name = new_name
@@ -175,17 +181,19 @@ func move_node(args: Dictionary) -> Dictionary:
 	var keep := bool(args.get("keep_global_transform", true))
 	var old_parent := node.get_parent()
 	var old_index := node.get_index()
+	var old_owner := node.owner
+	var new_owner := _move_owner(old_owner, new_parent, root)
 	var ur = _undo_redo()
 	if ur == null:
 		node.reparent(new_parent, keep)
-		node.owner = root
+		node.owner = new_owner
 	else:
 		ur.create_action("MCP: move node")
 		ur.add_do_method(node, "reparent", new_parent, keep)
-		ur.add_do_property(node, "owner", root)
+		ur.add_do_property(node, "owner", new_owner)
 		ur.add_undo_method(node, "reparent", old_parent, keep)
 		ur.add_undo_method(old_parent, "move_child", node, old_index)
-		ur.add_undo_property(node, "owner", root)
+		ur.add_undo_property(node, "owner", old_owner)
 		ur.commit_action()
 	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
 
@@ -541,6 +549,27 @@ func _connection_flags(source: Object, signal_name: String, cb: Callable) -> int
 			return int(c["flags"])
 	return Object.CONNECT_PERSIST
 
+# Pure: choose the owner a moved node should keep. Preserve its existing owner when
+# that owner is still a valid ancestor after the move (so the saved scene is unchanged);
+# otherwise fall back to the scene root so the node still serializes where it landed.
+func _move_owner(old_owner: Node, new_parent: Node, root: Node) -> Node:
+	if old_owner != null and (old_owner == new_parent or old_owner.is_ancestor_of(new_parent)):
+		return old_owner
+	return root
+
+# Pure: true when `dup` kept every script `orig` carries across the whole subtree.
+# duplicate() drops a node's script when that script's _init() requires parameters.
+func _scripts_preserved(orig: Node, dup: Node) -> bool:
+	if orig.get_script() != null and dup.get_script() == null:
+		return false
+	var oc := orig.get_children()
+	var dc := dup.get_children()
+	if oc.size() != dc.size():
+		return false
+	for i in oc.size():
+		if not _scripts_preserved(oc[i], dc[i]):
+			return false
+	return true
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.
 func _set_owner_recursive(node: Node, root: Node) -> void:

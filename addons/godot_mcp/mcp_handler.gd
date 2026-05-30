@@ -163,12 +163,6 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("attach_script", "Attach an existing .gd script to a node. Args: {path, script_path}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "script_path": {"type": "string"}}, "required": ["path", "script_path"]},
 		Callable(scene, "attach_script"))
-	reg.register("create_scene", "Create a new .tscn scene file with a single root node. Args: {path, root_type, root_name?, overwrite?}.",
-		{"type": "object", "properties": {"path": {"type": "string"}, "root_type": {"type": "string"}, "root_name": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "root_type"]},
-		Callable(scene, "create_scene"))
-	reg.register("save_scene", "Save the currently open scene. Without {path}: saves in-place via the editor. With {path} (.tscn): packs a variant copy without touching the live scene; refuses to clobber an existing file unless overwrite=true. Args: {path?, overwrite?}.",
-		{"type": "object", "properties": {"path": {"type": "string"}, "overwrite": {"type": "boolean"}}},
-		Callable(scene, "save_scene"))
 	var editor = EditorTools.new()
 	reg.register("get_output_log", "Get captured editor log entries. Args: {limit?, errors_only?}.",
 		{"type": "object", "properties": {"limit": {"type": "integer"}, "errors_only": {"type": "boolean"}}},

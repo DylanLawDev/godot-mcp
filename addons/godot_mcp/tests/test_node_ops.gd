@@ -1,0 +1,62 @@
+extends "res://addons/godot_mcp/tests/test_case.gd"
+
+const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
+
+func test_resolve_root_and_child() -> void:
+	var root := Node.new()
+	root.name = "Root"
+	var child := Node.new()
+	child.name = "Child"
+	root.add_child(child)
+	assert_eq(NodeOps.resolve(root, "."), root)
+	assert_eq(NodeOps.resolve(root, "Child"), child)
+	assert_eq(NodeOps.resolve(root, "Missing"), null)
+	# Absolute paths and traversal outside the subtree are rejected.
+	assert_eq(NodeOps.resolve(root, "/root/Child"), null)
+	root.free()
+
+func test_make_node() -> void:
+	var n := NodeOps.make_node("Node2D", "Foo")
+	assert_true(n is Node2D)
+	assert_eq(str(n.name), "Foo")
+	n.free()
+	assert_eq(NodeOps.make_node("NotARealClass", "x"), null)
+	# A non-Node class is rejected.
+	assert_eq(NodeOps.make_node("RefCounted", "x"), null)
+
+func test_value_applied_coercion() -> void:
+	assert_true(NodeOps.value_applied(1, 1.0))   # int/float coercion
+	assert_true(NodeOps.value_applied("a", "a"))
+	assert_false(NodeOps.value_applied("a", 1))   # mismatched types never crash
+
+func test_apply_props_sets_and_reports() -> void:
+	var n := Node2D.new()
+	var res := NodeOps.apply_props(n, {"position": "Vector2(5, 6)"})
+	assert_has(res["set"], "position")
+	assert_eq(n.position, Vector2(5, 6))
+	# Unknown property is reported, not applied.
+	var res2 := NodeOps.apply_props(n, {"no_such_prop": "1"})
+	assert_eq(res2["set"].size(), 0)
+	assert_eq(res2["errors"].size(), 1)
+	n.free()
+
+func test_serialize_tree_shape() -> void:
+	var root := Node.new()
+	root.name = "Root"
+	var child := Node2D.new()
+	child.name = "Kid"
+	root.add_child(child)
+	var tree := NodeOps.serialize_tree(root, root)
+	assert_eq(tree["name"], "Root")
+	assert_eq(tree["path"], ".")
+	assert_eq(tree["children"].size(), 1)
+	assert_eq(tree["children"][0]["name"], "Kid")
+	root.free()
+
+func test_encode_props_returns_strings() -> void:
+	var n := Node2D.new()
+	n.name = "N"
+	var props := NodeOps.encode_props(n)
+	assert_true(props.has("position"))
+	assert_eq(typeof(props["position"]), TYPE_STRING)
+	n.free()

@@ -25,6 +25,18 @@ func test_modify_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.modify_node({"path": ".", "properties": {}})["ok"])
 
+func test_duplicate_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.duplicate_node({"path": "Foo"})["ok"])
+
+func test_move_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.move_node({"path": "Foo", "new_parent_path": "."})["ok"])
+
+func test_rename_node_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.rename_node({"path": "Foo", "name": "Bar"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -196,3 +208,108 @@ func test_capture_and_restore_owners_and_index() -> void:
 	assert_eq(MID.owner, R)
 	assert_eq(GC.owner, R)
 	R.free()
+
+# Task 1.1: create_node's property application is factored into _apply_props (reused
+# from modify_node). A newly-attached node with props gets them set and owned by root.
+func test_apply_props_on_attached_node() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var n := Node2D.new()
+	n.name = "Made"
+	st._attach(root, n, root)
+	var res: Dictionary = st._apply_props(n, {"position": var_to_str(Vector2(7, 8))})
+	assert_eq(n.position, Vector2(7, 8))
+	assert_has(res["set"], "position")
+	assert_eq(n.owner, root)
+	root.free()
+
+# Task 1.2: _set_owner_recursive roots an entire duplicated subtree at the scene root.
+func test_set_owner_recursive_covers_descendants() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")  # Branch -> Leaf
+	var dup: Node = branch.duplicate()
+	root.add_child(dup)
+	st._set_owner_recursive(dup, root)
+	assert_true(dup.get_child_count() > 0)
+	assert_eq(dup.owner, root)
+	for c in dup.get_children():
+		assert_eq(c.owner, root)
+	root.free()
+
+# Task 1.3: reparenting moves a node under a new parent; owner stays the scene root.
+func test_reparent_keeps_owner() -> void:
+	var root := Node.new(); root.name = "Root"
+	var a := Node.new(); a.name = "A"; root.add_child(a); a.owner = root
+	var b := Node.new(); b.name = "B"; root.add_child(b); b.owner = root
+	a.owner = null  # avoid the editor "owner inconsistent" warning during reparent
+	a.reparent(b, false)
+	a.owner = root
+	assert_eq(a.get_parent(), b)
+	assert_eq(a.owner, root)
+	root.free()
+
+# Task 1.3: a node is an ancestor of its own descendant, so move_node's guard rejects it.
+func test_move_into_own_descendant_guard() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	assert_true(branch.is_ancestor_of(leaf))
+	root.free()
+
+# Task 1.4: renaming sets the node name (we read it back since Godot may de-dup).
+func test_rename_sets_node_name() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var leaf := st._resolve(root, "Branch/Leaf")
+	leaf.name = "Renamed"
+	assert_eq(str(leaf.name), "Renamed")
+	root.free()
+
+# Review fix (PR #5): move_node must preserve a node's existing owner when that owner
+# is still a valid ancestor after the move, and only fall back to root otherwise.
+func test_move_owner_preserves_valid_owner() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	# Owner == root, moving Leaf under Child (still under root) -> root stays the owner.
+	var child := st._resolve(root, "Child")
+	assert_eq(st._move_owner(root, child, root), root)
+	# Owner is an ancestor of the new parent -> preserved (Branch owns, move under Branch).
+	assert_eq(st._move_owner(branch, branch, root), branch)
+	# Ownerless node -> falls back to root so it still serializes.
+	assert_eq(st._move_owner(null, child, root), root)
+	# Owner that is NOT an ancestor of the new parent -> falls back to root.
+	assert_eq(st._move_owner(leaf, child, root), root)
+	root.free()
+
+# Review fix (PR #5): duplicate_node must reject a copy that silently lost a script.
+func test_scripts_preserved_detects_dropped_script() -> void:
+	var st = SceneTools.new()
+	var s := GDScript.new()
+	s.source_code = "extends Node"
+	s.reload()
+	var orig := Node.new()
+	orig.set_script(s)
+	var dup := Node.new()  # the "duplicate" lost the script
+	assert_false(st._scripts_preserved(orig, dup))
+	# A faithful copy (same script on both) passes.
+	var dup2 := Node.new()
+	dup2.set_script(s)
+	assert_true(st._scripts_preserved(orig, dup2))
+	# Scriptless on both sides is fine.
+	var bare_a := Node.new()
+	var bare_b := Node.new()
+	assert_true(st._scripts_preserved(bare_a, bare_b))
+	orig.free(); dup.free(); dup2.free(); bare_a.free(); bare_b.free()
+
+# Review fix (PR #5): a child-count mismatch in the subtree also fails the check.
+func test_scripts_preserved_checks_subtree_shape() -> void:
+	var st = SceneTools.new()
+	var orig := Node.new()
+	orig.add_child(Node.new())
+	var dup := Node.new()  # no children
+	assert_false(st._scripts_preserved(orig, dup))
+	orig.free(); dup.free()

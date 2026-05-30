@@ -109,8 +109,8 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("get_node_properties", "Get a node's properties. Args: {path} (NodePath relative to scene root; '.' = root).",
 		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
 		Callable(scene, "get_node_properties"))
-	reg.register("create_node", "Create a node under a parent. Args: {parent_path, type, name?}.",
-		{"type": "object", "properties": {"parent_path": {"type": "string"}, "type": {"type": "string"}, "name": {"type": "string"}}, "required": ["parent_path", "type"]},
+	reg.register("create_node", "Create a node under a parent. Args: {parent_path, type, name?, properties?} (properties values are Godot var_to_str strings).",
+		{"type": "object", "properties": {"parent_path": {"type": "string"}, "type": {"type": "string"}, "name": {"type": "string"}, "properties": {"type": "object"}}, "required": ["parent_path", "type"]},
 		Callable(scene, "create_node"))
 	reg.register("delete_node", "Delete a node. Args: {path}.",
 		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
@@ -118,6 +118,15 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("modify_node", "Set node properties (values are Godot var_to_str strings). Args: {path, properties}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "properties": {"type": "object"}}, "required": ["path", "properties"]},
 		Callable(scene, "modify_node"))
+	reg.register("duplicate_node", "Duplicate a node (and its subtree) under the same parent. Args: {path, new_name?}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "new_name": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "duplicate_node"))
+	reg.register("move_node", "Reparent a node under a new parent. Args: {path, new_parent_path, keep_global_transform?}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "new_parent_path": {"type": "string"}, "keep_global_transform": {"type": "boolean"}}, "required": ["path", "new_parent_path"]},
+		Callable(scene, "move_node"))
+	reg.register("rename_node", "Rename a node. Args: {path, name}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}}, "required": ["path", "name"]},
+		Callable(scene, "rename_node"))
 	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.

@@ -72,7 +72,7 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (14 tools implemented)
+## v1 scope (17 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
@@ -81,10 +81,11 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
 - **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
   plus MCP resources `godot://project/info`, `godot://scene/current`,
   `godot://script/current`
-- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`,
-  `delete_node`, `modify_node` — all operate on the currently-open scene;
-  `create_node`, `delete_node`, and `modify_node` are registered as editor
-  undo/redo actions (Ctrl-Z works)
+- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`
+  (accepts optional `properties`), `delete_node`, `modify_node`, `duplicate_node`,
+  `move_node`, `rename_node` — all operate on the currently-open scene; the mutating
+  tools (`create_node`, `delete_node`, `modify_node`, `duplicate_node`, `move_node`,
+  `rename_node`) are registered as editor undo/redo actions (Ctrl-Z works)
 - **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
   `get_console_log` — not yet implemented
 

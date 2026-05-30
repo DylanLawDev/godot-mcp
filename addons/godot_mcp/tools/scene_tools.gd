@@ -37,16 +37,38 @@ func create_node(args: Dictionary) -> Dictionary:
 	var node := _make_node(type, str(args.get("name", type)))
 	if node == null:
 		return {"ok": false, "error": "Invalid node type: " + type}
+	var props_arg = args.get("properties", {})
+	if typeof(props_arg) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "'properties' must be an object"}
+	var props: Dictionary = props_arg
 	var ur = _undo_redo()
+	var applied := {"set": [], "errors": []}
 	if ur == null:
 		_attach(parent, node, root)
+		if not props.is_empty():
+			applied = _apply_props(node, props)
 	else:
+		# Decode against the fresh instance so the property list is known before attach.
+		var decoded := _decode_props(node, props)
 		ur.create_action("MCP: create node")
 		ur.add_do_method(self, "_attach", parent, node, root)
 		ur.add_do_reference(node)
+		for item in decoded["valid"]:
+			ur.add_do_property(node, item["name"], item["value"])
 		ur.add_undo_method(self, "_detach", parent, node)
 		ur.commit_action()
-	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
+		var done := []
+		for item in decoded["valid"]:
+			if _value_applied(node.get(item["name"]), item["value"]):
+				done.append(item["name"])
+			else:
+				decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
+		applied = {"set": done, "errors": decoded["errors"]}
+	return {"ok": true, "value": {
+		"path": str(root.get_path_to(node)),
+		"set": applied["set"],
+		"errors": applied["errors"],
+	}}
 
 func delete_node(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
@@ -105,7 +127,127 @@ func modify_node(args: Dictionary) -> Dictionary:
 			decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
 	return {"ok": true, "value": {"path": path, "set": done, "errors": decoded["errors"]}}
 
+func duplicate_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	if path == "" or path == ".":
+		return {"ok": false, "error": "Cannot duplicate the scene root"}
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var parent := node.get_parent()
+	var dup: Node = node.duplicate()
+	# Godot's duplicate() silently drops a node's script when that script's _init()
+	# declares required parameters, yielding a behaviorless copy. Detect that and fail
+	# loudly rather than committing a broken node the caller thinks is a faithful clone.
+	if not _scripts_preserved(node, dup):
+		dup.free()
+		return {"ok": false, "error": "Cannot duplicate: an attached script was dropped by duplicate() (its _init() likely requires parameters)"}
+	var new_name := str(args.get("new_name", ""))
+	if new_name != "":
+		dup.name = new_name
+	var ur = _undo_redo()
+	if ur == null:
+		parent.add_child(dup)
+		_set_owner_recursive(dup, root)
+	else:
+		ur.create_action("MCP: duplicate node")
+		ur.add_do_method(parent, "add_child", dup)
+		ur.add_do_method(self, "_set_owner_recursive", dup, root)
+		ur.add_do_reference(dup)
+		ur.add_undo_method(self, "_detach", parent, dup)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": str(root.get_path_to(dup))}}
+
+func move_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	if path == "" or path == ".":
+		return {"ok": false, "error": "Cannot move the scene root"}
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var new_parent_path := str(args.get("new_parent_path", ""))
+	var new_parent := _resolve(root, new_parent_path)
+	if new_parent == null:
+		return {"ok": false, "error": "New parent node not found: " + new_parent_path}
+	if node == new_parent or node.is_ancestor_of(new_parent):
+		return {"ok": false, "error": "Cannot move a node into itself or its own descendant"}
+	var keep := bool(args.get("keep_global_transform", true))
+	var old_parent := node.get_parent()
+	var old_index := node.get_index()
+	var old_owner := node.owner
+	var new_owner := _move_owner(old_owner, new_parent, root)
+	var ur = _undo_redo()
+	if ur == null:
+		node.reparent(new_parent, keep)
+		node.owner = new_owner
+	else:
+		ur.create_action("MCP: move node")
+		ur.add_do_method(node, "reparent", new_parent, keep)
+		ur.add_do_property(node, "owner", new_owner)
+		ur.add_undo_method(node, "reparent", old_parent, keep)
+		ur.add_undo_method(old_parent, "move_child", node, old_index)
+		ur.add_undo_property(node, "owner", old_owner)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
+
+func rename_node(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var new_name := str(args.get("name", ""))
+	if new_name.strip_edges() == "":
+		return {"ok": false, "error": "Name must not be empty"}
+	var old_name := str(node.name)
+	var ur = _undo_redo()
+	if ur == null:
+		node.name = new_name
+	else:
+		ur.create_action("MCP: rename node")
+		ur.add_do_property(node, "name", new_name)
+		ur.add_undo_property(node, "name", old_name)
+		ur.commit_action()
+	# Godot may de-duplicate names, so report the actual resulting name.
+	return {"ok": true, "value": {"path": str(root.get_path_to(node)), "name": str(node.name)}}
+
 # --- Pure helpers ---
+
+# Pure: choose the owner a moved node should keep. Preserve its existing owner when
+# that owner is still a valid ancestor after the move (so the saved scene is unchanged);
+# otherwise fall back to the scene root so the node still serializes where it landed.
+func _move_owner(old_owner: Node, new_parent: Node, root: Node) -> Node:
+	if old_owner != null and (old_owner == new_parent or old_owner.is_ancestor_of(new_parent)):
+		return old_owner
+	return root
+
+# Pure: true when `dup` kept every script `orig` carries across the whole subtree.
+# duplicate() drops a node's script when that script's _init() requires parameters.
+func _scripts_preserved(orig: Node, dup: Node) -> bool:
+	if orig.get_script() != null and dup.get_script() == null:
+		return false
+	var oc := orig.get_children()
+	var dc := dup.get_children()
+	if oc.size() != dc.size():
+		return false
+	for i in oc.size():
+		if not _scripts_preserved(oc[i], dc[i]):
+			return false
+	return true
+
+# Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.
+func _set_owner_recursive(node: Node, root: Node) -> void:
+	node.owner = root
+	for c in node.get_children():
+		_set_owner_recursive(c, root)
 
 # Add `child` under `parent` and root it at `root` so it persists when the scene is saved.
 func _attach(parent: Node, child: Node, root: Node) -> void:

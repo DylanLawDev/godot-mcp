@@ -457,6 +457,33 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	_find_in_group(root, root, group, out)
 	return {"ok": true, "value": {"paths": out}}
 
+func create_scene(args: Dictionary) -> Dictionary:
+	var v := Paths.validate(str(args.get("path", "")))
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var path: String = v["path"]
+	if not path.ends_with(".tscn"):
+		return {"ok": false, "error": "Path must end with .tscn: " + path}
+	var overwrite := bool(args.get("overwrite", false))
+	if FileAccess.file_exists(path) and not overwrite:
+		return {"ok": false, "error": "File already exists: " + path + " (pass overwrite=true to replace)"}
+	var root_type := str(args.get("root_type", ""))
+	var root_name_arg := str(args.get("root_name", ""))
+	var root_name := root_name_arg if root_name_arg != "" else root_type
+	var node := _make_node(root_type, root_name)
+	if node == null:
+		return {"ok": false, "error": "Invalid node type: " + root_type}
+	var ps := PackedScene.new()
+	ps.pack(node)
+	node.free()
+	var err := ResourceSaver.save(ps, path)
+	if err != OK:
+		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % err}
+	_rescan_filesystem()
+	var uid_id := ResourceLoader.get_resource_uid(path)
+	var uid_str := ResourceUID.id_to_text(uid_id) if uid_id != ResourceUID.INVALID_ID else ""
+	return {"ok": true, "value": {"path": path, "root_type": root_type, "root_name": root_name, "uid": uid_str}}
+
 # --- Pure helpers ---
 
 # Validate `script_path`, ensure it exists and loads as a Script.
@@ -807,3 +834,10 @@ func _current_script():
 	if se == null:
 		return null
 	return se.get_current_script()
+
+func _rescan_filesystem() -> void:
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	var ei = plugin.get_editor_interface()
+	ei.get_resource_filesystem().scan()

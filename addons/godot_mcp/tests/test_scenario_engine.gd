@@ -89,3 +89,95 @@ func test_watch_signal_idempotent() -> void:
 	assert_true(eng.execute({"type": "watch_signal", "path": ".", "signal": "pinged"})["ok"])
 	assert_eq(root.get_signal_connection_list("pinged").size(), 1)
 	root.free()
+
+func test_assert_property_ops() -> void:
+	var root := _make_root()
+	root.get_node("Sub").position = Vector2(100, 0)
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var gt := eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "gt", "value": "50"})
+	assert_true(gt["passed"])
+	var eq := eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "eq", "value": "100"})
+	assert_true(eq["passed"])
+	var lt := eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "lt", "value": "50"})
+	assert_false(lt["passed"])
+	root.free()
+
+func test_assert_node_exists_and_absent() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "assert", "kind": "node_exists", "path": "Sub"})["passed"])
+	assert_true(eng.execute({"type": "assert", "kind": "node_absent", "path": "Ghost"})["passed"])
+	assert_false(eng.execute({"type": "assert", "kind": "node_exists", "path": "Ghost"})["passed"])
+	root.free()
+
+func test_assert_in_group() -> void:
+	var root := _make_root()
+	root.get_node("Sub").add_to_group("enemies")
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "assert", "kind": "in_group", "path": "Sub", "group": "enemies"})["passed"])
+	assert_false(eng.execute({"type": "assert", "kind": "in_group", "path": "Sub", "group": "allies"})["passed"])
+	root.free()
+
+func test_watch_and_assert_signal_count() -> void:
+	var root := _make_root()
+	root.add_user_signal("died")
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "watch_signal", "path": ".", "signal": "died"})["ok"])
+	root.emit_signal("died")
+	root.emit_signal("died")
+	var a := eng.execute({"type": "assert", "kind": "signal_count", "path": ".", "signal": "died", "op": "eq", "value": "2"})
+	assert_true(a["passed"])
+	assert_eq(a["actual"], 2)
+	root.free()
+
+func test_watch_and_assert_signal_count_with_args() -> void:
+	# Covers the unbind(argc) path: a signal carrying args must still count.
+	var root := _make_root()
+	root.add_user_signal("hit", [{"name": "amount", "type": TYPE_INT}])
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "watch_signal", "path": ".", "signal": "hit"})["ok"])
+	root.emit_signal("hit", 7)
+	root.emit_signal("hit", 3)
+	root.emit_signal("hit", 1)
+	var a := eng.execute({"type": "assert", "kind": "signal_count", "path": ".", "signal": "hit", "op": "ge", "value": "3"})
+	assert_true(a["passed"])
+	assert_eq(a["actual"], 3)
+	root.free()
+
+func test_signal_count_without_watch_fails() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_false(eng.execute({"type": "assert", "kind": "signal_count", "path": ".", "signal": "x", "op": "eq", "value": "0"})["passed"])
+	root.free()
+
+func test_results_verdict() -> void:
+	var root := _make_root()
+	root.get_node("Sub").position = Vector2(100, 0)
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "gt", "value": "50"})
+	var r := eng.results()
+	assert_true(r["ok"])
+	assert_true(r["passed"])
+	assert_eq(r["assertions"].size(), 1)
+	# A failing assertion flips passed but keeps ok true.
+	eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "lt", "value": "0"})
+	assert_true(eng.results()["ok"])
+	assert_false(eng.results()["passed"])
+	root.free()
+
+func test_results_ok_false_on_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "set_property", "path": "Ghost", "properties": {}})  # fatal
+	var r := eng.results()
+	assert_false(r["ok"])
+	assert_false(r["passed"])
+	root.free()

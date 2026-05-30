@@ -177,6 +177,92 @@ func _watch_signal(step: Dictionary) -> Dictionary:
 	node.connect(sig, cb)
 	return _step_ok("watch_signal", "watching " + key)
 
-# Assertions arrive in Task 3; stub keeps the match exhaustive until then.
+# Record an assertion verdict. `actual` is stringified via var_to_str for the
+# `property` kind (the value can be any Variant — Vector2, Color — with no clean
+# JSON form) and for the boolean kinds; `signal_count` keeps it a raw int.
 func _assert(step: Dictionary) -> Dictionary:
-	return _step_fail("assert", "assertions not yet implemented")
+	var idx := _take_index()
+	var kind := str(step.get("kind", ""))
+	var path := str(step.get("path", ""))
+	var rec := {"index": idx, "kind": kind, "path": path, "passed": false, "expected": "", "actual": null}
+	match kind:
+		"property":
+			var node := NodeOps.resolve(root, path)
+			if node == null:
+				rec["expected"] = "node exists"
+				rec["actual"] = "missing"
+			else:
+				var prop := str(step.get("property", ""))
+				var actual = node.get_indexed(NodePath(prop))
+				var op := str(step.get("op", "eq"))
+				rec["actual"] = var_to_str(actual)
+				rec["expected"] = "%s %s" % [op, str(step.get("value", ""))]
+				rec["passed"] = _compare(actual, op, step.get("value", ""))
+		"node_exists":
+			rec["passed"] = NodeOps.resolve(root, path) != null
+			rec["expected"] = "node exists"
+			rec["actual"] = str(rec["passed"])
+		"node_absent":
+			rec["passed"] = NodeOps.resolve(root, path) == null
+			rec["expected"] = "node absent"
+			rec["actual"] = str(not rec["passed"])
+		"in_group":
+			var node := NodeOps.resolve(root, path)
+			var grp := str(step.get("group", ""))
+			rec["passed"] = node != null and node.is_in_group(grp)
+			rec["expected"] = "in group " + grp
+			rec["actual"] = str(rec["passed"])
+		"signal_count":
+			var key := path + "::" + str(step.get("signal", ""))
+			var op := str(step.get("op", "eq"))
+			if _signal_counters.has(key):
+				var actual: int = _signal_counters[key].count
+				rec["actual"] = actual
+				rec["expected"] = "%s %s" % [op, str(step.get("value", ""))]
+				rec["passed"] = _compare(actual, op, step.get("value", ""))
+			else:
+				rec["expected"] = "watched"
+				rec["actual"] = "not watched"
+		_:
+			rec["expected"] = "known assert kind"
+			rec["actual"] = kind
+	_assertions.append(rec)
+	return rec.duplicate()
+
+func _numeric(v) -> bool:
+	return typeof(v) in [TYPE_INT, TYPE_FLOAT]
+
+func _compare(actual, op: String, expected_raw) -> bool:
+	var expected = str_to_var(str(expected_raw))
+	match op:
+		"eq":
+			return NodeOps.value_applied(actual, expected)
+		"ne":
+			return not NodeOps.value_applied(actual, expected)
+		"lt", "le", "gt", "ge":
+			if not _numeric(actual) or not _numeric(expected):
+				return false
+			var a := float(actual)
+			var b := float(expected)
+			if op == "lt": return a < b
+			if op == "le": return a <= b
+			if op == "gt": return a > b
+			return a >= b
+	return false
+
+# Accumulated results. ok = no fatal step; passed = ok AND every assertion passed.
+# A scenario with zero assertions is vacuously passed:true (a capture-only run);
+# add at least one assert step to get a meaningful verdict.
+# The runner attaches scene/frames_run/errors/log.
+func results() -> Dictionary:
+	var any_fail := false
+	for a in _assertions:
+		if not a.get("passed", false):
+			any_fail = true
+	return {
+		"ok": _fatal == "",
+		"passed": _fatal == "" and not any_fail,
+		"fatal": _fatal,
+		"steps": _steps,
+		"assertions": _assertions,
+	}

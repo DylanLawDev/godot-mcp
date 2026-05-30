@@ -7,6 +7,7 @@ const FileTools = preload("res://addons/godot_mcp/tools/file_tools.gd")
 const ScriptTools = preload("res://addons/godot_mcp/tools/script_tools.gd")
 const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
 const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
+const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
 const PROTOCOL_VERSION := "2025-06-18"
@@ -160,11 +161,28 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("attach_script", "Attach an existing .gd script to a node. Args: {path, script_path}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "script_path": {"type": "string"}}, "required": ["path", "script_path"]},
 		Callable(scene, "attach_script"))
+	var editor = EditorTools.new()
+	reg.register("get_output_log", "Get captured editor log entries. Args: {limit?, errors_only?}.",
+		{"type": "object", "properties": {"limit": {"type": "integer"}, "errors_only": {"type": "boolean"}}},
+		Callable(editor, "get_output_log"))
+	reg.register("clear_output", "Clear the MCP capture buffer (NOT the editor's Output dock). No args.",
+		{"type": "object", "properties": {}},
+		Callable(editor, "clear_output"))
+	reg.register("get_editor_errors", "Get captured editor errors/warnings only. Args: {limit?}.",
+		{"type": "object", "properties": {"limit": {"type": "integer"}}},
+		Callable(editor, "get_editor_errors"))
+	reg.register("get_editor_screenshot", "Screenshot the editor window (windowed editor only). Args: {path?} (PNG to res:// path, else base64). ",
+		{"type": "object", "properties": {"path": {"type": "string"}}},
+		Callable(editor, "get_editor_screenshot"))
+	reg.register("reload_project", "Trigger an editor filesystem rescan. No args.",
+		{"type": "object", "properties": {}},
+		Callable(editor, "reload_project"))
 	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.
 	reg.set_meta("_files", files)
 	reg.set_meta("_scripts", scripts)
+	reg.set_meta("_editor", editor)
 	return reg
 
 func _build_default_resource_registry(project = null, scene = null):

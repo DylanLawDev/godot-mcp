@@ -457,6 +457,47 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	_find_in_group(root, root, group, out)
 	return {"ok": true, "value": {"paths": out}}
 
+func create_scene(args: Dictionary) -> Dictionary:
+	var v := Paths.validate(str(args.get("path", "")))
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var path: String = v["path"]
+	if not path.ends_with(".tscn"):
+		return {"ok": false, "error": "Path must end with .tscn: " + path}
+	# Strict `== true`: a destructive flag must not be tripped by a truthy non-bool
+	# (e.g. the string "false", which is truthy in GDScript) from an unvalidated client.
+	var overwrite: bool = args.get("overwrite", false) == true
+	if FileAccess.file_exists(path) and not overwrite:
+		return {"ok": false, "error": "File already exists: " + path + " (pass overwrite=true to replace)"}
+	var root_type := str(args.get("root_type", ""))
+	var root_name_arg := str(args.get("root_name", ""))
+	var root_name := root_name_arg if root_name_arg != "" else root_type
+	var node := _make_node(root_type, root_name)
+	if node == null:
+		return {"ok": false, "error": "Invalid node type: " + root_type}
+	var ps := PackedScene.new()
+	var pack_err := ps.pack(node)
+	node.free()
+	if pack_err != OK:
+		return {"ok": false, "error": "PackedScene.pack failed with error %d" % pack_err}
+	# Create parent dirs before saving, same as create_script — ResourceSaver.save
+	# does not mkdir, and there is no separate mkdir tool to do it first.
+	var dir := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		var derr := DirAccess.make_dir_recursive_absolute(dir)
+		if derr != OK:
+			return {"ok": false, "error": "Failed to create directory %s (error %d)" % [dir, derr]}
+	var err := ResourceSaver.save(ps, path)
+	if err != OK:
+		return {"ok": false, "error": "ResourceSaver.save error %d" % err}
+	# Take over the cache slot so a subsequent load(path) returns this scene rather
+	# than a stale PackedScene cached from a prior load of the same path (overwrite case).
+	ps.take_over_path(path)
+	_rescan_filesystem()
+	var uid_id := ResourceLoader.get_resource_uid(path)
+	var uid_str := ResourceUID.id_to_text(uid_id) if uid_id != ResourceUID.INVALID_ID else ""
+	return {"ok": true, "value": {"path": path, "root_type": root_type, "root_name": root_name, "uid": uid_str}}
+
 # --- Pure helpers ---
 
 # Validate `script_path`, ensure it exists and loads as a Script.
@@ -807,3 +848,11 @@ func _current_script():
 	if se == null:
 		return null
 	return se.get_current_script()
+
+# Only meaningful inside a live editor; the plugin registers itself in Engine metadata.
+func _rescan_filesystem() -> void:
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	var ei = plugin.get_editor_interface()
+	ei.get_resource_filesystem().scan()

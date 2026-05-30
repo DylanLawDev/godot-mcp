@@ -102,12 +102,35 @@ func test_update_project_uids_rejects_missing_root() -> void:
 	var r := UidTools.new().update_project_uids({"path": "res://_no_such_dir_xyz"})
 	assert_false(r["ok"], str(r))
 
+func _snapshot_resources(dir: String, out: Dictionary) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name != "." and name != "..":
+			var full := dir.path_join(name)
+			if d.current_is_dir():
+				if not d.is_link(full):
+					_snapshot_resources(full, out)
+			elif name.ends_with(".tscn") or name.ends_with(".tres") or name.ends_with(".res"):
+				out[full] = FileAccess.get_file_as_bytes(full)
+		name = d.get_next()
+	d.list_dir_end()
+
 func test_update_project_uids_default_path_runs_without_error() -> void:
 	# Call with NO args to exercise the args.get("path", "res://") default branch.
-	# This walks the real project tree (res://); it may resave tracked files. We assert
-	# only the result shape and that the call succeeds — we do not assert specific counts
-	# so the test stays stable regardless of what resources exist in the project.
+	# This walks the real project tree (res://); it may resave tracked files. Snapshot
+	# all resource bytes beforehand and restore them afterward so the working tree is
+	# left byte-identical regardless of what resources exist in the project.
+	var snapshot: Dictionary = {}
+	_snapshot_resources("res://", snapshot)
 	var r := UidTools.new().update_project_uids({})
+	for path: String in snapshot:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_buffer(snapshot[path])
+		f = null
 	assert_true(r["ok"], str(r))
 	var v: Dictionary = r["value"]
 	assert_true(v.has("scanned"), str(v))

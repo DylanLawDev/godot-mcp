@@ -312,6 +312,21 @@ func test_encode_signals_reports_connection() -> void:
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
 
+# Task 2.3: _connection_flags recovers a connection's original ConnectFlags so a
+# disconnect's undo restores it exactly (not a hardcoded CONNECT_PERSIST).
+func test_connection_flags_recovers_original() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var cb := Callable(leaf, "queue_free")
+	var flags := Object.CONNECT_PERSIST | Object.CONNECT_ONE_SHOT
+	child.connect("renamed", cb, flags)
+	assert_eq(st._connection_flags(child, "renamed", cb), flags)
+	# An absent connection falls back to CONNECT_PERSIST.
+	assert_eq(st._connection_flags(child, "ready", cb), Object.CONNECT_PERSIST)
+	root.free()
+
 # Task 2.6: _load_script validates the path and loads a real Script; rejects
 # traversal, missing files and non-script resources.
 func test_load_script_validates_and_loads() -> void:

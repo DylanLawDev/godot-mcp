@@ -271,13 +271,15 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 	var cb := Callable(target, method)
 	if not source.has_signal(sig) or not source.is_connected(sig, cb):
 		return {"ok": false, "error": "Signal not connected: " + sig + " -> " + to_path + "." + method}
+	# Capture the original flags so undo restores the connection exactly (not just CONNECT_PERSIST).
+	var orig_flags := _connection_flags(source, sig, cb)
 	var ur = _undo_redo()
 	if ur == null:
 		source.disconnect(sig, cb)
 	else:
 		ur.create_action("MCP: disconnect signal")
 		ur.add_do_method(source, "disconnect", sig, cb)
-		ur.add_undo_method(source, "connect", sig, cb, Object.CONNECT_PERSIST)
+		ur.add_undo_method(source, "connect", sig, cb, orig_flags)
 		ur.commit_action()
 	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
 
@@ -356,6 +358,8 @@ func add_resource(args: Dictionary) -> Dictionary:
 	if not known.has(property):
 		return {"ok": false, "error": "No such property: " + property}
 	var res: Resource = made["value"]
+	var sub_set := []
+	var sub_errors := []
 	var sub = args.get("sub_properties", {})
 	if typeof(sub) == TYPE_DICTIONARY and not sub.is_empty():
 		var res_known := {}
@@ -364,6 +368,9 @@ func add_resource(args: Dictionary) -> Dictionary:
 		for name in sub.keys():
 			if res_known.has(name):
 				res.set(name, str_to_var(str(sub[name])))
+				sub_set.append(name)
+			else:
+				sub_errors.append({"name": name, "error": "No such property"})
 	var old = node.get(property)
 	var ur = _undo_redo()
 	if ur == null:
@@ -373,7 +380,7 @@ func add_resource(args: Dictionary) -> Dictionary:
 		ur.add_do_property(node, property, res)
 		ur.add_undo_property(node, property, old)
 		ur.commit_action()
-	return {"ok": true, "value": {"path": path, "property": property, "type": type}}
+	return {"ok": true, "value": {"path": path, "property": property, "type": type, "sub_set": sub_set, "sub_errors": sub_errors}}
 
 func get_node_groups(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
@@ -525,6 +532,14 @@ func _encode_signals(node: Node, root: Node) -> Array:
 			})
 		out.append({"name": name, "args": sig["args"], "connections": conns})
 	return out
+
+# The ConnectFlags of an existing `signal -> callable` connection on `source`,
+# defaulting to CONNECT_PERSIST if no matching connection is found.
+func _connection_flags(source: Object, signal_name: String, cb: Callable) -> int:
+	for c in source.get_signal_connection_list(signal_name):
+		if (c["callable"] as Callable) == cb:
+			return int(c["flags"])
+	return Object.CONNECT_PERSIST
 
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.

@@ -12,6 +12,11 @@ func get_input_actions(_args: Dictionary) -> Dictionary:
 		var name := str(prop.get("name", ""))
 		if not name.begins_with(_PREFIX):
 			continue
+		# Skip feature-tag overrides like "input/fire.macos": Godot stores per-platform
+		# overrides of a base action with a ".<feature>" suffix. They aren't standalone
+		# actions, and reporting "fire.macos" would be a phantom/duplicate action name.
+		if "." in name.substr(_PREFIX.length()):
+			continue
 		var dict = ProjectSettings.get_setting(name)
 		if typeof(dict) != TYPE_DICTIONARY:
 			continue
@@ -36,7 +41,14 @@ func set_input_action(args: Dictionary) -> Dictionary:
 	var built := _build_action(existing, args)
 	var action: Dictionary = built["action"]
 	ProjectSettings.set_setting(key, action)
-	ProjectSettings.save()
+	# Persisting can fail (read-only checkout, permissions, disk error). Report it
+	# instead of claiming success, and roll back the in-memory change so the editor's
+	# state matches what's actually on disk. set_setting(key, null) removes a key that
+	# didn't exist before; passing the prior dict restores an update.
+	var err := ProjectSettings.save()
+	if err != OK:
+		ProjectSettings.set_setting(key, cur)
+		return {"ok": false, "error": "Failed to save project.godot (error %d)" % err}
 	return {"ok": true, "value": {
 		"name": name,
 		"deadzone": action["deadzone"],

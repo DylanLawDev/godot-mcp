@@ -18,6 +18,24 @@ func test_get_input_actions_returns_actions() -> void:
 		names.append(a["name"])
 	assert_has(names, "ui_accept")
 
+# Review fix (PR #9): feature-tag overrides (e.g. "input/fire.macos") are per-platform
+# overrides of a base action, not standalone actions, and must not be reported. This
+# test only mutates ProjectSettings in memory (never calls save()), so project.godot
+# is untouched.
+func test_get_input_actions_excludes_feature_overrides() -> void:
+	var input = InputTools.new()
+	ProjectSettings.set_setting("input/_mcp_feat", {"deadzone": 0.5, "events": []})
+	ProjectSettings.set_setting("input/_mcp_feat.macos", {"deadzone": 0.5, "events": []})
+	var got = input.get_input_actions({})
+	var names := []
+	for a in got["value"]["actions"]:
+		names.append(a["name"])
+	assert_has(names, "_mcp_feat")
+	assert_false(names.has("_mcp_feat.macos"))
+	# Cleanup: drop the in-memory settings (no save() was called, so disk is clean).
+	ProjectSettings.set_setting("input/_mcp_feat", null)
+	ProjectSettings.set_setting("input/_mcp_feat.macos", null)
+
 func test_encode_action_pure() -> void:
 	var input = InputTools.new()
 	var enc = input._encode_action("input/jump", {"deadzone": 0.2, "events": []})

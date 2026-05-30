@@ -49,6 +49,18 @@ func test_disconnect_signal_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.disconnect_signal({"from_path": "A", "signal": "renamed", "to_path": "B", "method": "queue_free"})["ok"])
 
+func test_get_node_groups_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.get_node_groups({"path": "."})["ok"])
+
+func test_set_node_groups_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.set_node_groups({"path": ".", "groups": []})["ok"])
+
+func test_find_nodes_in_group_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.find_nodes_in_group({"group": "enemies"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -287,6 +299,28 @@ func test_encode_signals_reports_connection() -> void:
 	assert_true(found.has("renamed->queue_free"))
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
+
+# Task 2.3: _find_in_group walks a detached subtree and returns the root-relative
+# paths of exactly the nodes that are in the group.
+func test_find_in_group_collects_matching_paths() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	st._resolve(root, "Child").add_to_group("enemies", true)
+	st._resolve(root, "Branch/Leaf").add_to_group("enemies", true)
+	st._resolve(root, "Branch").add_to_group("walls", true)
+	var out := []
+	st._find_in_group(root, root, "enemies", out)
+	assert_eq(out.size(), 2)
+	assert_has(out, "Child")
+	assert_has(out, "Branch/Leaf")
+	root.free()
+
+# Task 2.3: _group_diff computes which groups to add vs remove given current/desired.
+func test_group_diff_added_and_removed() -> void:
+	var st = SceneTools.new()
+	var d: Dictionary = st._group_diff(["a", "b"], ["b", "c"])
+	assert_eq(d["added"], ["c"])
+	assert_eq(d["removed"], ["a"])
 
 # Task 2.2: connecting then disconnecting a signal flips is_connected, using the
 # same Godot primitives the live-editor do/undo branches invoke.

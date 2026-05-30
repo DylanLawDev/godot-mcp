@@ -280,7 +280,86 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
 
+func get_node_groups(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	return {"ok": true, "value": {"path": path, "groups": _groups_as_strings(node)}}
+
+func set_node_groups(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var groups_arg = args.get("groups", null)
+	if typeof(groups_arg) != TYPE_ARRAY:
+		return {"ok": false, "error": "'groups' must be an array"}
+	var desired := []
+	for g in groups_arg:
+		desired.append(str(g))
+	var current := _groups_as_strings(node)
+	var ur = _undo_redo()
+	if ur == null:
+		_set_groups(node, desired)
+	else:
+		ur.create_action("MCP: set node groups")
+		ur.add_do_method(self, "_set_groups", node, desired)
+		ur.add_undo_method(self, "_set_groups", node, current)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "groups": _groups_as_strings(node)}}
+
+func find_nodes_in_group(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var group := str(args.get("group", ""))
+	var out := []
+	_find_in_group(root, root, group, out)
+	return {"ok": true, "value": {"paths": out}}
+
 # --- Pure helpers ---
+
+# A node's groups as plain Strings (get_groups returns StringNames).
+func _groups_as_strings(node: Node) -> Array:
+	var out := []
+	for g in node.get_groups():
+		out.append(str(g))
+	return out
+
+# Replace `node`'s group membership with exactly `desired`, persistently. Removes
+# any group not in `desired` and adds (persistently) any that is missing.
+func _set_groups(node: Node, desired: Array) -> void:
+	var diff := _group_diff(_groups_as_strings(node), desired)
+	for g in diff["removed"]:
+		node.remove_from_group(g)
+	for g in diff["added"]:
+		node.add_to_group(g, true)
+
+# Compute {added, removed} string arrays moving from `current` to `desired`.
+func _group_diff(current: Array, desired: Array) -> Dictionary:
+	var added := []
+	var removed := []
+	for g in desired:
+		if not current.has(g):
+			added.append(g)
+	for g in current:
+		if not desired.has(g):
+			removed.append(g)
+	return {"added": added, "removed": removed}
+
+# Walk `node`'s subtree, appending root-relative paths of nodes in `group` to `out`.
+func _find_in_group(node: Node, root: Node, group: String, out: Array) -> void:
+	if node.is_in_group(group):
+		out.append(str(root.get_path_to(node)))
+	for c in node.get_children():
+		_find_in_group(c, root, group, out)
 
 # Encode `node`'s signals with their current connections. A connection target that
 # is the root or a descendant of root is reported as a root-relative path; anything

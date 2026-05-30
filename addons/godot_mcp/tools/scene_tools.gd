@@ -3,6 +3,7 @@ extends RefCounted
 
 const _NO_SCENE := "No scene is currently open"
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
+const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
 
 # --- Public tools ---
 
@@ -767,96 +768,34 @@ func _restore(parent: Node, node: Node, index: int, owners: Array) -> void:
 # Decode props into {valid: [{name, value}], errors: [{name, error}]}.
 # A name absent from the node's property list is an error; the rest decode via str_to_var.
 func _decode_props(node: Node, props: Dictionary) -> Dictionary:
-	var known := {}
-	for p in node.get_property_list():
-		known[p["name"]] = true
-	var valid := []
-	var errors := []
-	for name in props.keys():
-		if not known.has(name):
-			errors.append({"name": name, "error": "No such property"})
-			continue
-		valid.append({"name": name, "value": str_to_var(str(props[name]))})
-	return {"valid": valid, "errors": errors}
+	return NodeOps.decode_props(node, props)
 
 # Type-safe "did the set take?" check. Never compares mismatched Variant types with ==
 # (that raises a runtime error); allows int/float coercion.
 func _value_applied(current, intended) -> bool:
-	var tc := typeof(current)
-	var ti := typeof(intended)
-	if tc == ti:
-		return current == intended
-	if tc in [TYPE_INT, TYPE_FLOAT] and ti in [TYPE_INT, TYPE_FLOAT]:
-		return float(current) == float(intended)
-	return false
+	return NodeOps.value_applied(current, intended)
 
 # Set decoded values directly on the node, verifying each actually took.
 # Returns {set:[names], errors:[{name,error}]}. (Headless / no-undo path.)
 func _apply_props(node: Node, props: Dictionary) -> Dictionary:
-	var decoded := _decode_props(node, props)
-	var done := []
-	for item in decoded["valid"]:
-		node.set(item["name"], item["value"])
-		if _value_applied(node.get(item["name"]), item["value"]):
-			done.append(item["name"])
-		else:
-			decoded["errors"].append({"name": item["name"], "error": "Value not applied (type mismatch)"})
-	return {"set": done, "errors": decoded["errors"]}
+	return NodeOps.apply_props(node, props)
 
 # Instantiate a Node subclass by class name, or null if invalid / not a Node.
 func _make_node(type: String, node_name: String) -> Node:
-	if not ClassDB.class_exists(type) or not ClassDB.can_instantiate(type):
-		return null
-	if not ClassDB.is_parent_class(type, "Node"):
-		return null
-	var inst = ClassDB.instantiate(type)
-	if not (inst is Node):
-		return null
-	var n: Node = inst
-	if node_name != "":
-		n.name = node_name
-	return n
+	return NodeOps.make_node(type, node_name)
 
 # Map a root-relative NodePath string to a Node (or null). "." -> root.
 func _resolve(root: Node, path: String) -> Node:
-	if path == "" or path == ".":
-		return root
-	# Reject paths that escape the edited scene: absolute paths (/root/...) and
-	# any path (e.g. "..") that resolves to a node outside the scene subtree.
-	if NodePath(path).is_absolute():
-		return null
-	var node := root.get_node_or_null(NodePath(path))
-	if node == null or (node != root and not root.is_ancestor_of(node)):
-		return null
-	return node
+	return NodeOps.resolve(root, path)
 
 # All entries of get_property_list() except category/group/subgroup separators,
 # each value encoded with var_to_str so it survives the JSON boundary.
 func _encode_props(node: Node) -> Dictionary:
-	var skip := PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP
-	var out := {}
-	for p in node.get_property_list():
-		if int(p["usage"]) & skip:
-			continue
-		var name: String = p["name"]
-		out[name] = var_to_str(node.get(name))
-	return out
+	return NodeOps.encode_props(node)
 
 # Recursively serialize `node`'s subtree. `path` is relative to `root` ("." for root).
 func _serialize_tree(node: Node, root: Node) -> Dictionary:
-	var out := {
-		"name": str(node.name),
-		"type": node.get_class(),
-		"path": str(root.get_path_to(node)),
-		"script": null,
-		"children": [],
-	}
-	var scr = node.get_script()
-	if scr != null and scr.resource_path != "":
-		out["script"] = scr.resource_path
-	for c in node.get_children():
-		out["children"].append(_serialize_tree(c, root))
-	return out
+	return NodeOps.serialize_tree(node, root)
 
 # --- Resource handlers ---
 

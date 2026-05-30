@@ -2,7 +2,9 @@
 extends Logger
 
 # Ring-buffer Logger installed by the plugin. Captures engine log messages and
-# errors so the MCP server can serve them via editor introspection tools.
+# errors so the MCP server can serve them via editor introspection tools. Also
+# reused standalone by the headless scenario runner (runtime/scenario_runner.gd)
+# to capture a run's log/errors in a non-editor process.
 # Logger callbacks may fire off the main thread, so all shared state is guarded
 # by a Mutex. NEVER call print/push_error inside the overrides (infinite recursion).
 #

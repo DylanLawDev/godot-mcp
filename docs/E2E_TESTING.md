@@ -181,3 +181,24 @@ to read a project file invokes `read_file`.
 - Path handling rejects `..` traversal but does not normalize `user://` or
   percent-encoded paths (defense-in-depth, not the security boundary — loopback/trusted).
 - Run/feedback and in-game runtime tools are **not yet implemented** (future plans). Scene tools (`get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`) are implemented and covered in section 4 above.
+
+## Headless scenario runner
+
+The runtime scenario runner drives a real scene headlessly (no editor). Author a
+scenario JSON (target scene + ordered steps), run it, read the results JSON:
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/move_right.json /tmp/out.json
+echo "exit=$?"   # 0 = every assertion passed
+cat /tmp/out.json
+```
+
+`examples/scenarios/move_right.json` against `examples/scenes/runner_demo.tscn`
+should report `passed: true`: it holds `ui_right` for ~1s, asserts the node moved
+past x=100, and that `reached_goal` fired once.
+
+Step types: `wait_frames`, `wait_seconds`, `input_action` (modes `press`/`release`/`tap`),
+`set_property`, `create_node`, `delete_node`, `call_method`, `watch_signal`, and
+`assert` (kinds `property`, `node_exists`, `node_absent`, `in_group`, `signal_count`;
+ops `eq`/`ne`/`lt`/`le`/`gt`/`ge`). Input is action-based (project input map) and
+poll-observable (`Input.is_action_pressed`); it does not fire `_input`/`_unhandled_input`.

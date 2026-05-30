@@ -1,0 +1,11 @@
+{
+  "scene": "res://examples/scenes/runner_demo.tscn",
+  "steps": [
+    { "type": "watch_signal", "path": ".", "signal": "reached_goal" },
+    { "type": "input_action", "action": "ui_right", "mode": "press" },
+    { "type": "wait_seconds", "seconds": 1.0 },
+    { "type": "input_action", "action": "ui_right", "mode": "release" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "position:x", "op": "gt", "value": "100" },
+    { "type": "assert", "kind": "signal_count", "path": ".", "signal": "reached_goal", "op": "eq", "value": "1" }
+  ]
+}

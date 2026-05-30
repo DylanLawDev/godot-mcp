@@ -115,8 +115,13 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
   supports partial updates (omit `events`/`deadzone` to keep existing values);
   `events` are Godot `var_to_str` `InputEvent` strings, and non-`InputEvent`
   entries are skipped and reported in an `errors` list.
-- **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
-  `get_console_log` — not yet implemented
+- **Runtime (headless scenario runner)** *(implemented)*: `addons/godot_mcp/runtime/run_scenario.sh`
+  launches a separate `--headless` Godot process that runs a real scene, drives it with
+  input-map actions, manipulates/inspects live nodes, and writes a pass/fail results JSON
+  (no editor, no HTTP server in the game). Step types: `wait_frames`/`wait_seconds`,
+  `input_action`, `set_property`, `create_node`/`delete_node`, `call_method`, `watch_signal`,
+  and `assert`. Action input is poll-observable only; raw key/mouse `InputEvent` synthesis,
+  `_input` delivery, and screenshots remain deferred.
 
 Deferred to v2: in-game **runtime** tools (screenshot, input injection, live
 node query) — they need a second live connection from the running game.

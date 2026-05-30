@@ -152,7 +152,6 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 		ur.add_do_method(self, "_set_owner_recursive", dup, root)
 		ur.add_do_reference(dup)
 		ur.add_undo_method(self, "_detach", parent, dup)
-		ur.add_undo_reference(dup)
 		ur.commit_action()
 	return {"ok": true, "value": {"path": str(root.get_path_to(dup))}}
 

@@ -242,6 +242,7 @@ func test_reparent_keeps_owner() -> void:
 	var root := Node.new(); root.name = "Root"
 	var a := Node.new(); a.name = "A"; root.add_child(a); a.owner = root
 	var b := Node.new(); b.name = "B"; root.add_child(b); b.owner = root
+	a.owner = null  # avoid the editor "owner inconsistent" warning during reparent
 	a.reparent(b, false)
 	a.owner = root
 	assert_eq(a.get_parent(), b)

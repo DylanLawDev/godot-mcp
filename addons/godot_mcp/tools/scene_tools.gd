@@ -221,6 +221,65 @@ func get_signals(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Node not found: " + path}
 	return {"ok": true, "value": {"path": path, "signals": _encode_signals(node, root)}}
 
+func connect_signal(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var from_path := str(args.get("from_path", ""))
+	var source := _resolve(root, from_path)
+	if source == null:
+		return {"ok": false, "error": "Node not found: " + from_path}
+	var to_path := str(args.get("to_path", ""))
+	var target := _resolve(root, to_path)
+	if target == null:
+		return {"ok": false, "error": "Node not found: " + to_path}
+	var sig := str(args.get("signal", ""))
+	if not source.has_signal(sig):
+		return {"ok": false, "error": "No such signal: " + sig}
+	var method := str(args.get("method", ""))
+	if not target.has_method(method):
+		return {"ok": false, "error": "No such method: " + method}
+	var flags := int(args.get("flags", Object.CONNECT_PERSIST))
+	var cb := Callable(target, method)
+	if source.is_connected(sig, cb):
+		return {"ok": false, "error": "Signal already connected: " + sig + " -> " + to_path + "." + method}
+	var ur = _undo_redo()
+	if ur == null:
+		source.connect(sig, cb, flags)
+	else:
+		ur.create_action("MCP: connect signal")
+		ur.add_do_method(source, "connect", sig, cb, flags)
+		ur.add_undo_method(source, "disconnect", sig, cb)
+		ur.commit_action()
+	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method, "flags": flags}}
+
+func disconnect_signal(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var from_path := str(args.get("from_path", ""))
+	var source := _resolve(root, from_path)
+	if source == null:
+		return {"ok": false, "error": "Node not found: " + from_path}
+	var to_path := str(args.get("to_path", ""))
+	var target := _resolve(root, to_path)
+	if target == null:
+		return {"ok": false, "error": "Node not found: " + to_path}
+	var sig := str(args.get("signal", ""))
+	var method := str(args.get("method", ""))
+	var cb := Callable(target, method)
+	if not source.has_signal(sig) or not source.is_connected(sig, cb):
+		return {"ok": false, "error": "Signal not connected: " + sig + " -> " + to_path + "." + method}
+	var ur = _undo_redo()
+	if ur == null:
+		source.disconnect(sig, cb)
+	else:
+		ur.create_action("MCP: disconnect signal")
+		ur.add_do_method(source, "disconnect", sig, cb)
+		ur.add_undo_method(source, "connect", sig, cb, Object.CONNECT_PERSIST)
+		ur.commit_action()
+	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
+
 # --- Pure helpers ---
 
 # Encode `node`'s signals with their current connections. A connection target that

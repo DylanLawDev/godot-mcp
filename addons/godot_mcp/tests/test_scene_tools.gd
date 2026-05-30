@@ -41,6 +41,14 @@ func test_get_signals_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.get_signals({"path": "."})["ok"])
 
+func test_connect_signal_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.connect_signal({"from_path": "A", "signal": "renamed", "to_path": "B", "method": "queue_free"})["ok"])
+
+func test_disconnect_signal_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.disconnect_signal({"from_path": "A", "signal": "renamed", "to_path": "B", "method": "queue_free"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -278,6 +286,21 @@ func test_encode_signals_reports_connection() -> void:
 			found[str(s["name"]) + "->" + str(c["method"])] = c["target_path"]
 	assert_true(found.has("renamed->queue_free"))
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
+	root.free()
+
+# Task 2.2: connecting then disconnecting a signal flips is_connected, using the
+# same Godot primitives the live-editor do/undo branches invoke.
+func test_connect_disconnect_primitives() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var cb := Callable(leaf, "queue_free")
+	assert_false(child.is_connected("renamed", cb))
+	child.connect("renamed", cb, Object.CONNECT_PERSIST)
+	assert_true(child.is_connected("renamed", cb))
+	child.disconnect("renamed", cb)
+	assert_false(child.is_connected("renamed", cb))
 	root.free()
 
 # Task 1.4: renaming sets the node name (we read it back since Godot may de-dup).

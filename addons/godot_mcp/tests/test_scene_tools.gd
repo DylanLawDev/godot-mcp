@@ -392,6 +392,53 @@ func test_group_diff_added_and_removed() -> void:
 	assert_eq(d["added"], ["c"])
 	assert_eq(d["removed"], ["a"])
 
+# Review fix (PR #6): internal "_"-prefixed groups are reserved by Godot and must
+# never be removed by set_node_groups, even when absent from the desired list.
+func test_group_diff_preserves_internal_groups() -> void:
+	var st = SceneTools.new()
+	var d: Dictionary = st._group_diff(["_edit_lock_", "enemies"], ["walls"])
+	assert_has(d["added"], "walls")
+	assert_has(d["removed"], "enemies")
+	assert_false(d["removed"].has("_edit_lock_"))
+
+# Review fix (PR #6): _find_connection returns the real (possibly bound) callable so a
+# connection made with bound args can still be located and disconnected.
+func test_find_connection_matches_bound_callable() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var bound := Callable(leaf, "set_process").bind(true)
+	child.connect("renamed", bound)
+	var found := st._find_connection(child, "renamed", leaf, "set_process")
+	assert_false(found.is_null())
+	# It recovered the ACTUAL bound callable (carries its bind), which is what
+	# disconnect() requires — a freshly built Callable(target, method) has no binds
+	# and disconnect would reject it.
+	assert_eq(found.get_bound_arguments_count(), 1)
+	child.disconnect("renamed", found)
+	assert_false(child.is_connected("renamed", found))
+	# No matching connection yields an empty Callable.
+	assert_true(st._find_connection(child, "ready", leaf, "set_process").is_null())
+	root.free()
+
+# Review fix (PR #6): attach_script must reject scripts whose native base is
+# incompatible with the target node.
+func test_script_compatible_checks_base_type() -> void:
+	var st = SceneTools.new()
+	assert_true(st._script_compatible("Sprite2D", "Node2D"))   # subclass of base
+	assert_true(st._script_compatible("Node2D", "Node2D"))      # exact base
+	assert_false(st._script_compatible("Control", "Node2D"))    # unrelated branch
+	assert_true(st._script_compatible("Control", ""))           # no declared base
+
+# Review fix (PR #6): add_resource must reject a resource the property can't accept.
+func test_resource_assignable_respects_property_class() -> void:
+	var st = SceneTools.new()
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Shape2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Texture2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_INT, ""))   # not an object prop
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "")) # untyped object prop
+
 # Task 2.2: connecting then disconnecting a signal flips is_connected, using the
 # same Godot primitives the live-editor do/undo branches invoke.
 func test_connect_disconnect_primitives() -> void:
@@ -415,3 +462,50 @@ func test_rename_sets_node_name() -> void:
 	leaf.name = "Renamed"
 	assert_eq(str(leaf.name), "Renamed")
 	root.free()
+
+# Review fix (PR #5): move_node must preserve a node's existing owner when that owner
+# is still a valid ancestor after the move, and only fall back to root otherwise.
+func test_move_owner_preserves_valid_owner() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var branch := st._resolve(root, "Branch")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	# Owner == root, moving Leaf under Child (still under root) -> root stays the owner.
+	var child := st._resolve(root, "Child")
+	assert_eq(st._move_owner(root, child, root), root)
+	# Owner is an ancestor of the new parent -> preserved (Branch owns, move under Branch).
+	assert_eq(st._move_owner(branch, branch, root), branch)
+	# Ownerless node -> falls back to root so it still serializes.
+	assert_eq(st._move_owner(null, child, root), root)
+	# Owner that is NOT an ancestor of the new parent -> falls back to root.
+	assert_eq(st._move_owner(leaf, child, root), root)
+	root.free()
+
+# Review fix (PR #5): duplicate_node must reject a copy that silently lost a script.
+func test_scripts_preserved_detects_dropped_script() -> void:
+	var st = SceneTools.new()
+	var s := GDScript.new()
+	s.source_code = "extends Node"
+	s.reload()
+	var orig := Node.new()
+	orig.set_script(s)
+	var dup := Node.new()  # the "duplicate" lost the script
+	assert_false(st._scripts_preserved(orig, dup))
+	# A faithful copy (same script on both) passes.
+	var dup2 := Node.new()
+	dup2.set_script(s)
+	assert_true(st._scripts_preserved(orig, dup2))
+	# Scriptless on both sides is fine.
+	var bare_a := Node.new()
+	var bare_b := Node.new()
+	assert_true(st._scripts_preserved(bare_a, bare_b))
+	orig.free(); dup.free(); dup2.free(); bare_a.free(); bare_b.free()
+
+# Review fix (PR #5): a child-count mismatch in the subtree also fails the check.
+func test_scripts_preserved_checks_subtree_shape() -> void:
+	var st = SceneTools.new()
+	var orig := Node.new()
+	orig.add_child(Node.new())
+	var dup := Node.new()  # no children
+	assert_false(st._scripts_preserved(orig, dup))
+	orig.free(); dup.free()

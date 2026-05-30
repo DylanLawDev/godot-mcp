@@ -474,11 +474,13 @@ func create_scene(args: Dictionary) -> Dictionary:
 	if node == null:
 		return {"ok": false, "error": "Invalid node type: " + root_type}
 	var ps := PackedScene.new()
-	ps.pack(node)
+	var pack_err := ps.pack(node)
 	node.free()
+	if pack_err != OK:
+		return {"ok": false, "error": "PackedScene.pack failed with error %d" % pack_err}
 	var err := ResourceSaver.save(ps, path)
 	if err != OK:
-		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % err}
+		return {"ok": false, "error": "ResourceSaver.save error %d" % err}
 	_rescan_filesystem()
 	var uid_id := ResourceLoader.get_resource_uid(path)
 	var uid_str := ResourceUID.id_to_text(uid_id) if uid_id != ResourceUID.INVALID_ID else ""
@@ -835,6 +837,7 @@ func _current_script():
 		return null
 	return se.get_current_script()
 
+# Only meaningful inside a live editor; the plugin registers itself in Engine metadata.
 func _rescan_filesystem() -> void:
 	if not Engine.has_meta("GodotMCPPlugin"):
 		return

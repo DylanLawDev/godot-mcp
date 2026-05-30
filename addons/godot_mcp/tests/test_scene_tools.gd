@@ -540,13 +540,10 @@ func test_script_needs_init_args() -> void:
 # --- create_scene tests ---
 
 const _TEMP_SCENE := "res://_mcp_test_create_scene.tscn"
-const _TEMP_SCENE_2 := "res://_mcp_test_create_scene2.tscn"
 
 func _cleanup_temp_scenes() -> void:
 	if FileAccess.file_exists(_TEMP_SCENE):
 		DirAccess.remove_absolute(_TEMP_SCENE)
-	if FileAccess.file_exists(_TEMP_SCENE_2):
-		DirAccess.remove_absolute(_TEMP_SCENE_2)
 
 # Creating a Node2D-rooted scene succeeds; the file exists; reloading yields the
 # correct root type and name.

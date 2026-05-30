@@ -110,7 +110,12 @@ func _set_property(step: Dictionary) -> Dictionary:
 	if typeof(props) != TYPE_DICTIONARY:
 		return _step_fail("set_property", "'properties' must be an object")
 	var res := NodeOps.apply_props(node, props)
-	return _step_ok("set_property", "set=%s errors=%s" % [str(res["set"]), str(res["errors"])])
+	# A requested property that doesn't apply means the runtime state wasn't
+	# established — fail the step (fatal, per this engine's non-assert contract)
+	# rather than silently recording ok:true and letting the run pass.
+	if not (res["errors"] as Array).is_empty():
+		return _step_fail("set_property", "set=%s errors=%s" % [str(res["set"]), str(res["errors"])])
+	return _step_ok("set_property", "set=%s" % str(res["set"]))
 
 func _create_node(step: Dictionary) -> Dictionary:
 	var parent := NodeOps.resolve(root, str(step.get("parent_path", ".")))
@@ -124,7 +129,11 @@ func _create_node(step: Dictionary) -> Dictionary:
 	node.owner = root
 	var props = step.get("properties", {})
 	if typeof(props) == TYPE_DICTIONARY and not props.is_empty():
-		NodeOps.apply_props(node, props)
+		var res := NodeOps.apply_props(node, props)
+		# Same contract as set_property: a property that doesn't apply is a setup
+		# failure, even though the node itself was created and added.
+		if not (res["errors"] as Array).is_empty():
+			return _step_fail("create_node", "created %s but errors=%s" % [str(root.get_path_to(node)), str(res["errors"])])
 	return _step_ok("create_node", "created " + str(root.get_path_to(node)))
 
 func _delete_node(step: Dictionary) -> Dictionary:
@@ -233,7 +242,15 @@ func _numeric(v) -> bool:
 	return typeof(v) in [TYPE_INT, TYPE_FLOAT]
 
 func _compare(actual, op: String, expected_raw) -> bool:
-	var expected = str_to_var(str(expected_raw))
+	# Expected values follow the codebase convention (NodeOps.decode_props): a JSON
+	# string holding a Godot variant literal — "100" -> int, "Vector2(1,0)" -> Vector2.
+	# A plain string like "Player" is not a valid literal (str_to_var returns null),
+	# so fall back to the raw string for that case so string properties can be
+	# asserted directly; an explicit "null" literal is preserved as null.
+	var raw := str(expected_raw)
+	var expected = str_to_var(raw)
+	if expected == null and raw != "null":
+		expected = raw
 	match op:
 		"eq":
 			return NodeOps.value_applied(actual, expected)

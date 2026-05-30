@@ -48,6 +48,21 @@ func _main(scenario_path: String, out_path: String) -> void:
 	var scenario: Dictionary = parsed["value"]
 	var scene_path := str(scenario.get("scene", ""))
 
+	# Validate steps up front: the engine's execute() takes a typed Dictionary, so a
+	# malformed 'steps' (non-array, or any non-object element) would raise a runtime
+	# error mid-loop and skip _write_results entirely. The runner's contract is to
+	# emit a machine-readable failure JSON for bad scenarios, so fail cleanly here.
+	var steps = scenario.get("steps", [])
+	if typeof(steps) != TYPE_ARRAY:
+		_write_results(out_path, _fail_results(scene_path, "Scenario 'steps' must be an array", logger))
+		quit(2)
+		return
+	for s in steps:
+		if typeof(s) != TYPE_DICTIONARY:
+			_write_results(out_path, _fail_results(scene_path, "Each step in 'steps' must be an object", logger))
+			quit(2)
+			return
+
 	var packed = load(scene_path)
 	if packed == null or not (packed is PackedScene):
 		_write_results(out_path, _fail_results(scene_path, "Could not load scene: " + scene_path, logger))
@@ -62,7 +77,7 @@ func _main(scenario_path: String, out_path: String) -> void:
 	var eng := ScenarioEngine.new()
 	eng.set_root(inst)
 	var frames_run := 0
-	for step in scenario.get("steps", []):
+	for step in steps:
 		var res: Dictionary = eng.execute(step)
 		if res.has("frames"):
 			for _i in int(res["frames"]):

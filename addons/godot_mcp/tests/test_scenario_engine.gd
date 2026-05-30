@@ -29,6 +29,25 @@ func test_set_property_unknown_node_is_fatal() -> void:
 	assert_true(res.get("fatal", false))
 	root.free()
 
+func test_set_property_unknown_property_is_fatal() -> void:
+	# A property that can't be applied must fail the step, not pass silently.
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "set_property", "path": "Sub", "properties": {"no_such_prop": "1"}})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_create_node_with_bad_property_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "create_node", "parent_path": ".", "node_type": "Node2D", "name": "Made", "properties": {"no_such_prop": "1"}})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
 func test_create_and_delete_node() -> void:
 	var root := _make_root()
 	var eng := ScenarioEngine.new()
@@ -101,6 +120,16 @@ func test_assert_property_ops() -> void:
 	assert_true(eq["passed"])
 	var lt := eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "position:x", "op": "lt", "value": "50"})
 	assert_false(lt["passed"])
+	root.free()
+
+func test_assert_property_plain_string() -> void:
+	# A plain-string expected value (not a quoted variant literal) must compare as
+	# a string, so string-valued properties like `name` can be asserted directly.
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "name", "op": "eq", "value": "Sub"})["passed"])
+	assert_false(eng.execute({"type": "assert", "kind": "property", "path": "Sub", "property": "name", "op": "eq", "value": "Other"})["passed"])
 	root.free()
 
 func test_assert_node_exists_and_absent() -> void:

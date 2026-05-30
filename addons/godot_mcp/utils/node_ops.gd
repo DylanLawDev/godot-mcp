@@ -50,7 +50,10 @@ static func decode_props(node: Node, props: Dictionary) -> Dictionary:
 	return {"valid": valid, "errors": errors}
 
 # Type-safe "did the set take?" check. Never compares mismatched Variant types with ==
-# (that raises a runtime error); allows int/float coercion.
+# (that raises a runtime error); allows int/float and String/StringName coercion.
+# String/StringName matters for properties Godot stores as StringName (e.g. `name`):
+# a String value applied to such a property reads back as StringName, which a strict
+# typeof check would wrongly call "not applied".
 static func value_applied(current, intended) -> bool:
 	var tc := typeof(current)
 	var ti := typeof(intended)
@@ -58,6 +61,8 @@ static func value_applied(current, intended) -> bool:
 		return current == intended
 	if tc in [TYPE_INT, TYPE_FLOAT] and ti in [TYPE_INT, TYPE_FLOAT]:
 		return float(current) == float(intended)
+	if tc in [TYPE_STRING, TYPE_STRING_NAME] and ti in [TYPE_STRING, TYPE_STRING_NAME]:
+		return String(current) == String(intended)
 	return false
 
 # Set decoded values directly on the node, verifying each actually took.

@@ -3,16 +3,22 @@ extends EditorPlugin
 
 const HttpServer = preload("res://addons/godot_mcp/http_server.gd")
 const McpHandler = preload("res://addons/godot_mcp/mcp_handler.gd")
+const OutputCapture = preload("res://addons/godot_mcp/tools/output_capture.gd")
 
 const META_KEY := "GodotMCPPlugin"
+const CAPTURE_META_KEY := "GodotMCPOutputCapture"
 const SETTING_PORT := "godot_mcp/port"
 const DEFAULT_PORT := 8765
 
 var _server
 var _handler
+var _capture
 
 func _enter_tree() -> void:
 	Engine.set_meta(META_KEY, self)
+	_capture = OutputCapture.new()
+	OS.add_logger(_capture)
+	Engine.set_meta(CAPTURE_META_KEY, _capture)
 	_handler = McpHandler.new()
 	_server = HttpServer.new(Callable(_handler, "handle_message"))
 	var port := _resolve_port()
@@ -30,6 +36,11 @@ func _exit_tree() -> void:
 		_server.stop()
 	_server = null
 	_handler = null
+	if _capture != null:
+		OS.remove_logger(_capture)
+		_capture = null
+	if Engine.has_meta(CAPTURE_META_KEY):
+		Engine.remove_meta(CAPTURE_META_KEY)
 	if Engine.has_meta(META_KEY):
 		Engine.remove_meta(META_KEY)
 

@@ -72,19 +72,49 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (14 tools implemented)
+## v1 scope (35 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
 - **Files/scripts:** `read_file`, `list_dir`, `search_project`, `create_script`,
-  `edit_script`, `validate_script`
+  `edit_script` (whole-file overwrite *or* find/replace via `find`/`replace`/`replace_all`),
+  `validate_script`, `list_scripts` (recursive `.gd` listing with `class_name`/`extends`),
+  `get_open_scripts` (scripts open in the editor + the current one). Note: dedicated
+  `read_script`/`search_in_files` (godot-mcp-pro parity) are intentionally covered by the
+  generic `read_file`/`search_project` rather than added as separate tools.
 - **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
   plus MCP resources `godot://project/info`, `godot://scene/current`,
   `godot://script/current`
-- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`,
-  `delete_node`, `modify_node` — all operate on the currently-open scene;
-  `create_node`, `delete_node`, and `modify_node` are registered as editor
-  undo/redo actions (Ctrl-Z works)
+- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`
+  (accepts optional `properties`), `delete_node`, `modify_node`, `duplicate_node`,
+  `move_node`, `rename_node` — all operate on the currently-open scene; the mutating
+  tools (`create_node`, `delete_node`, `modify_node`, `duplicate_node`, `move_node`,
+  `rename_node`) are registered as editor undo/redo actions (Ctrl-Z works)
+- **Signals/groups/resources** *(implemented)*: `get_signals`, `connect_signal`,
+  `disconnect_signal` wire node signals to methods (persistent connections that
+  serialize into the `.tscn`); `get_node_groups`, `set_node_groups`,
+  `find_nodes_in_group` manage persistent group membership across the edited scene;
+  `add_resource` instantiates a `Resource` subtype and assigns it to a node property;
+  `set_anchor_preset` applies a `Control` layout preset; `attach_script` attaches an
+  existing `.gd` to a node — all mutating tools are undoable
+- **Editor** *(implemented)*: `get_output_log` and `get_editor_errors` read engine
+  log/error output captured by a ring-buffer `Logger` the plugin installs via
+  `OS.add_logger` (Godot exposes no public API to *read* the editor's Output dock,
+  so capturing our own stream is the only robust path); `clear_output` clears **the
+  MCP capture buffer, not the editor's Output dock**; `get_editor_screenshot` captures
+  the editor window (PNG to a `res://` path or base64) and **requires a windowed,
+  non-headless editor** — in `--headless` it returns a clean error; `reload_project`
+  triggers an editor filesystem rescan. Note: `reload_plugin` (godot-mcp-pro parity) is
+  intentionally **deferred** — a plugin disabling/reloading itself would tear down the
+  HTTP server and `_process` loop servicing the very request, so it can't safely respond.
+- **Input map** *(implemented)*: `get_input_actions` and `set_input_action` read
+  and write the project input map (the `input/*` entries in `ProjectSettings`,
+  each an `{deadzone, events}` action). They operate on the project definition and
+  work **fully headlessly** (no running game needed), and are distinct from the
+  deferred running-game input-*injection* tools (v2 runtime). `set_input_action`
+  supports partial updates (omit `events`/`deadzone` to keep existing values);
+  `events` are Godot `var_to_str` `InputEvent` strings, and non-`InputEvent`
+  entries are skipped and reported in an `errors` list.
 - **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
   `get_console_log` — not yet implemented
 

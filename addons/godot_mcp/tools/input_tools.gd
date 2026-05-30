@@ -18,6 +18,47 @@ func get_input_actions(_args: Dictionary) -> Dictionary:
 		actions.append(_encode_action(name, dict))
 	return {"ok": true, "value": {"actions": actions}}
 
+# Create or update an input action in the project input map. Supports partial
+# updates: omitting `events` or `deadzone` preserves the existing value.
+func set_input_action(args: Dictionary) -> Dictionary:
+	var name := str(args.get("name", "")).strip_edges()
+	if name == "" or "/" in name:
+		return {"ok": false, "error": "Invalid action name: " + str(args.get("name", ""))}
+	var key := _PREFIX + name
+	var existing := {"deadzone": 0.5, "events": []}
+	var cur = ProjectSettings.get_setting(key) if ProjectSettings.has_setting(key) else null
+	if typeof(cur) == TYPE_DICTIONARY:
+		existing = {"deadzone": float(cur.get("deadzone", 0.5)), "events": Array(cur.get("events", []))}
+	var built := _build_action(existing, args)
+	var action: Dictionary = built["action"]
+	ProjectSettings.set_setting(key, action)
+	ProjectSettings.save()
+	return {"ok": true, "value": {
+		"name": name,
+		"deadzone": action["deadzone"],
+		"event_count": action["events"].size(),
+		"errors": built["errors"],
+	}}
+
+# Pure: merge `args` over an existing {deadzone, events} action. `events` (if
+# present) is an Array of var_to_str strings; each is parsed and kept only if it
+# resolves to an InputEvent — invalid entries are collected into "errors".
+func _build_action(existing: Dictionary, args: Dictionary) -> Dictionary:
+	var deadzone := float(existing.get("deadzone", 0.5))
+	var events: Array = Array(existing.get("events", []))
+	var errors := []
+	if args.has("deadzone"):
+		deadzone = float(args["deadzone"])
+	if args.has("events"):
+		events = []
+		for s in args["events"]:
+			var parsed = str_to_var(str(s))
+			if parsed is InputEvent:
+				events.append(parsed)
+			else:
+				errors.append("Not an InputEvent: " + str(s))
+	return {"action": {"deadzone": deadzone, "events": events}, "errors": errors}
+
 # Pure: encode a single "input/<name>" setting Dictionary into a serializable
 # action entry. Events become var_to_str strings (the encoding scene_tools uses).
 func _encode_action(name: String, dict: Dictionary) -> Dictionary:

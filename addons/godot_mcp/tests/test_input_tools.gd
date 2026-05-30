@@ -24,3 +24,62 @@ func test_encode_action_pure() -> void:
 	assert_eq(enc["name"], "jump")
 	assert_eq(enc["deadzone"], 0.2)
 	assert_eq(enc["events"], [])
+
+# --- 5.2: set_input_action ---
+
+func test_build_action_deadzone_only_keeps_events() -> void:
+	var input = InputTools.new()
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_SPACE
+	var existing := {"deadzone": 0.5, "events": [ev]}
+	var res = input._build_action(existing, {"deadzone": 0.9})
+	assert_eq(res["action"]["deadzone"], 0.9)
+	assert_eq(res["action"]["events"].size(), 1)
+	assert_eq(res["errors"], [])
+
+func test_build_action_parses_valid_event() -> void:
+	var input = InputTools.new()
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_A
+	var s := var_to_str(ev)
+	var res = input._build_action({"deadzone": 0.5, "events": []}, {"events": [s]})
+	assert_eq(res["action"]["events"].size(), 1)
+	assert_true(res["action"]["events"][0] is InputEvent)
+	assert_eq(res["errors"], [])
+
+func test_build_action_rejects_invalid_event() -> void:
+	var input = InputTools.new()
+	# A non-InputEvent var_to_str string (a plain int) must be rejected.
+	var res = input._build_action({"deadzone": 0.5, "events": []}, {"events": ["42"]})
+	assert_eq(res["action"]["events"].size(), 0)
+	assert_eq(res["errors"].size(), 1)
+
+func test_set_input_action_rejects_bad_names() -> void:
+	var input = InputTools.new()
+	assert_false(input.set_input_action({"name": ""})["ok"])
+	assert_false(input.set_input_action({"name": "  "})["ok"])
+	assert_false(input.set_input_action({"name": "foo/bar"})["ok"])
+
+func test_set_input_action_integration() -> void:
+	var input = InputTools.new()
+	var key := "input/_mcp_test_action"
+	# Snapshot the on-disk project file so teardown can restore it byte-for-byte.
+	# ProjectSettings.save() reformats the file (adds a header), so removing the
+	# action alone leaves project.godot dirty; restoring the original bytes does not.
+	var original := FileAccess.get_file_as_bytes("res://project.godot")
+	var r = input.set_input_action({"name": "_mcp_test_action", "deadzone": 0.3})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["value"]["name"], "_mcp_test_action")
+	assert_eq(r["value"]["deadzone"], 0.3)
+	# Now it should show up in get_input_actions.
+	var got = input.get_input_actions({})
+	var names := []
+	for a in got["value"]["actions"]:
+		names.append(a["name"])
+	assert_has(names, "_mcp_test_action")
+	# TEARDOWN: drop the action from the live ProjectSettings and restore the
+	# original project.godot bytes so the working tree is left clean.
+	ProjectSettings.set_setting(key, null)
+	var f := FileAccess.open("res://project.godot", FileAccess.WRITE)
+	f.store_buffer(original)
+	f = null

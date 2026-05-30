@@ -276,8 +276,11 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Node not found: " + to_path}
 	var sig := str(args.get("signal", ""))
 	var method := str(args.get("method", ""))
-	var cb := Callable(target, method)
-	if not source.has_signal(sig) or not source.is_connected(sig, cb):
+	# Use the connection's ACTUAL callable (which may carry bound args) rather than a
+	# freshly-built Callable(target, method); otherwise a bound connection reported by
+	# get_signals can't be matched and we'd wrongly claim it isn't connected.
+	var cb := _find_connection(source, sig, target, method)
+	if cb.is_null() or not source.is_connected(sig, cb):
 		return {"ok": false, "error": "Signal not connected: " + sig + " -> " + to_path + "." + method}
 	# Capture the original flags so undo restores the connection exactly (not just CONNECT_PERSIST).
 	var orig_flags := _connection_flags(source, sig, cb)
@@ -304,6 +307,12 @@ func attach_script(args: Dictionary) -> Dictionary:
 	if not loaded["ok"]:
 		return {"ok": false, "error": loaded["error"]}
 	var scr = loaded["value"]
+	# set_script silently no-ops when the script's native base type is incompatible with
+	# the node (e.g. a Node2D script on a Control), so validate up front rather than
+	# reporting a success that left the node's script unchanged.
+	var base := str(scr.get_instance_base_type())
+	if not _script_compatible(node.get_class(), base):
+		return {"ok": false, "error": "Script extends " + base + ", incompatible with node type " + node.get_class()}
 	var old = node.get_script()
 	var ur = _undo_redo()
 	if ur == null:
@@ -361,10 +370,19 @@ func add_resource(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": made["error"]}
 	var property := str(args.get("property", ""))
 	var known := {}
+	var prop_type := TYPE_NIL
+	var prop_class := ""
 	for p in node.get_property_list():
 		known[p["name"]] = true
+		if p["name"] == property:
+			prop_type = p["type"]
+			prop_class = str(p.get("class_name", ""))
 	if not known.has(property):
 		return {"ok": false, "error": "No such property: " + property}
+	# The property must accept the created resource, otherwise set() silently no-ops and
+	# we'd report a modification that never happened. Validate against the declared class.
+	if not _resource_assignable(type, prop_type, prop_class):
+		return {"ok": false, "error": "Resource type " + type + " is not assignable to property '" + property + "' (expects " + (prop_class if prop_class != "" else "non-object") + ")"}
 	var res: Resource = made["value"]
 	var sub_set := []
 	var sub_errors := []
@@ -496,7 +514,9 @@ func _set_groups(node: Node, desired: Array) -> void:
 	for g in diff["added"]:
 		node.add_to_group(g, true)
 
-# Compute {added, removed} string arrays moving from `current` to `desired`.
+# Compute {added, removed} string arrays moving from `current` to `desired`. Groups
+# whose name begins with "_" are engine/editor-internal (Godot reserves that prefix)
+# and are never removed, so set_node_groups can't silently clear editor metadata.
 func _group_diff(current: Array, desired: Array) -> Dictionary:
 	var added := []
 	var removed := []
@@ -504,7 +524,7 @@ func _group_diff(current: Array, desired: Array) -> Dictionary:
 		if not current.has(g):
 			added.append(g)
 	for g in current:
-		if not desired.has(g):
+		if not desired.has(g) and not str(g).begins_with("_"):
 			removed.append(g)
 	return {"added": added, "removed": removed}
 
@@ -548,6 +568,36 @@ func _connection_flags(source: Object, signal_name: String, cb: Callable) -> int
 		if (c["callable"] as Callable) == cb:
 			return int(c["flags"])
 	return Object.CONNECT_PERSIST
+
+# Find an existing `signal_name` connection on `source` whose callable targets `target`
+# with method `method`, returning the ACTUAL (possibly bound) Callable. Returns an empty
+# Callable when none matches. Matching on object+method lets us disconnect connections
+# that carry bound arguments, which a freshly built Callable(target, method) would miss.
+func _find_connection(source: Object, signal_name: String, target: Object, method: String) -> Callable:
+	if not source.has_signal(signal_name):
+		return Callable()
+	for c in source.get_signal_connection_list(signal_name):
+		var cb: Callable = c["callable"]
+		if cb.get_object() == target and str(cb.get_method()) == method:
+			return cb
+	return Callable()
+
+# Pure: can a script whose native base type is `base` attach to a node of `node_class`?
+# The node must be that base type or a subclass of it.
+func _script_compatible(node_class: String, base: String) -> bool:
+	if base == "":
+		return true
+	return ClassDB.is_parent_class(node_class, base)
+
+# Pure: is a resource of class `res_type` assignable to a property described by
+# `(prop_type, prop_class)` from get_property_list? Object properties that declare a
+# class only accept that class or a subclass; non-object properties accept nothing.
+func _resource_assignable(res_type: String, prop_type: int, prop_class: String) -> bool:
+	if prop_type != TYPE_OBJECT:
+		return false
+	if prop_class == "":
+		return true
+	return ClassDB.is_parent_class(res_type, prop_class)
 
 # Pure: choose the owner a moved node should keep. Preserve its existing owner when
 # that owner is still a valid ancestor after the move (so the saved scene is unchanged);

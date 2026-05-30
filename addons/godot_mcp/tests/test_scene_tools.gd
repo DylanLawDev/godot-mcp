@@ -392,6 +392,53 @@ func test_group_diff_added_and_removed() -> void:
 	assert_eq(d["added"], ["c"])
 	assert_eq(d["removed"], ["a"])
 
+# Review fix (PR #6): internal "_"-prefixed groups are reserved by Godot and must
+# never be removed by set_node_groups, even when absent from the desired list.
+func test_group_diff_preserves_internal_groups() -> void:
+	var st = SceneTools.new()
+	var d: Dictionary = st._group_diff(["_edit_lock_", "enemies"], ["walls"])
+	assert_has(d["added"], "walls")
+	assert_has(d["removed"], "enemies")
+	assert_false(d["removed"].has("_edit_lock_"))
+
+# Review fix (PR #6): _find_connection returns the real (possibly bound) callable so a
+# connection made with bound args can still be located and disconnected.
+func test_find_connection_matches_bound_callable() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var bound := Callable(leaf, "set_process").bind(true)
+	child.connect("renamed", bound)
+	var found := st._find_connection(child, "renamed", leaf, "set_process")
+	assert_false(found.is_null())
+	# It recovered the ACTUAL bound callable (carries its bind), which is what
+	# disconnect() requires — a freshly built Callable(target, method) has no binds
+	# and disconnect would reject it.
+	assert_eq(found.get_bound_arguments_count(), 1)
+	child.disconnect("renamed", found)
+	assert_false(child.is_connected("renamed", found))
+	# No matching connection yields an empty Callable.
+	assert_true(st._find_connection(child, "ready", leaf, "set_process").is_null())
+	root.free()
+
+# Review fix (PR #6): attach_script must reject scripts whose native base is
+# incompatible with the target node.
+func test_script_compatible_checks_base_type() -> void:
+	var st = SceneTools.new()
+	assert_true(st._script_compatible("Sprite2D", "Node2D"))   # subclass of base
+	assert_true(st._script_compatible("Node2D", "Node2D"))      # exact base
+	assert_false(st._script_compatible("Control", "Node2D"))    # unrelated branch
+	assert_true(st._script_compatible("Control", ""))           # no declared base
+
+# Review fix (PR #6): add_resource must reject a resource the property can't accept.
+func test_resource_assignable_respects_property_class() -> void:
+	var st = SceneTools.new()
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Shape2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Texture2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_INT, ""))   # not an object prop
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "")) # untyped object prop
+
 # Task 2.2: connecting then disconnecting a signal flips is_connected, using the
 # same Godot primitives the live-editor do/undo branches invoke.
 func test_connect_disconnect_primitives() -> void:

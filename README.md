@@ -72,7 +72,7 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (17 tools implemented)
+## v1 scope (26 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
@@ -86,6 +86,13 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
   `move_node`, `rename_node` — all operate on the currently-open scene; the mutating
   tools (`create_node`, `delete_node`, `modify_node`, `duplicate_node`, `move_node`,
   `rename_node`) are registered as editor undo/redo actions (Ctrl-Z works)
+- **Signals/groups/resources** *(implemented)*: `get_signals`, `connect_signal`,
+  `disconnect_signal` wire node signals to methods (persistent connections that
+  serialize into the `.tscn`); `get_node_groups`, `set_node_groups`,
+  `find_nodes_in_group` manage persistent group membership across the edited scene;
+  `add_resource` instantiates a `Resource` subtype and assigns it to a node property;
+  `set_anchor_preset` applies a `Control` layout preset; `attach_script` attaches an
+  existing `.gd` to a node — all mutating tools are undoable
 - **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
   `get_console_log` — not yet implemented
 

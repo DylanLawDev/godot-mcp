@@ -72,7 +72,7 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (33 tools implemented)
+## v1 scope (35 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
@@ -107,6 +107,14 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
   triggers an editor filesystem rescan. Note: `reload_plugin` (godot-mcp-pro parity) is
   intentionally **deferred** — a plugin disabling/reloading itself would tear down the
   HTTP server and `_process` loop servicing the very request, so it can't safely respond.
+- **Input map** *(implemented)*: `get_input_actions` and `set_input_action` read
+  and write the project input map (the `input/*` entries in `ProjectSettings`,
+  each an `{deadzone, events}` action). They operate on the project definition and
+  work **fully headlessly** (no running game needed), and are distinct from the
+  deferred running-game input-*injection* tools (v2 runtime). `set_input_action`
+  supports partial updates (omit `events`/`deadzone` to keep existing values);
+  `events` are Godot `var_to_str` `InputEvent` strings, and non-`InputEvent`
+  entries are skipped and reported in an `errors` list.
 - **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
   `get_console_log` — not yet implemented
 

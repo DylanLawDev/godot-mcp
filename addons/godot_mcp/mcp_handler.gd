@@ -8,6 +8,7 @@ const ScriptTools = preload("res://addons/godot_mcp/tools/script_tools.gd")
 const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
 const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
 const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
+const InputTools = preload("res://addons/godot_mcp/tools/input_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
 const PROTOCOL_VERSION := "2025-06-18"
@@ -177,12 +178,20 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("reload_project", "Trigger an editor filesystem rescan. No args.",
 		{"type": "object", "properties": {}},
 		Callable(editor, "reload_project"))
+	var input = InputTools.new()
+	reg.register("get_input_actions", "Get the project input map actions (input/* in ProjectSettings). No args.",
+		{"type": "object", "properties": {}},
+		Callable(input, "get_input_actions"))
+	reg.register("set_input_action", "Create/update an input map action (partial update). Args: {name, events? (Array of var_to_str InputEvent strings), deadzone?}.",
+		{"type": "object", "properties": {"name": {"type": "string"}, "events": {"type": "array", "items": {"type": "string"}}, "deadzone": {"type": "number"}}, "required": ["name"]},
+		Callable(input, "set_input_action"))
 	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.
 	reg.set_meta("_files", files)
 	reg.set_meta("_scripts", scripts)
 	reg.set_meta("_editor", editor)
+	reg.set_meta("_input", input)
 	return reg
 
 func _build_default_resource_registry(project = null, scene = null):

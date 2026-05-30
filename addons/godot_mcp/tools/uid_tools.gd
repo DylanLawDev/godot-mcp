@@ -32,7 +32,8 @@ func update_project_uids(args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": {"scanned": counts[0], "resaved": counts[1], "failed": failed}}
 
 # Recursively walk `dir` for .tscn/.tres/.res files, reload+resave each.
-# Skips hidden dirs (name starts with '.') and symlinked dirs (same as list_scripts).
+# Skips symlinked dirs (same as list_scripts/_walk_scripts); DirAccess excludes hidden
+# entries by default so no explicit hidden-dir guard is needed.
 # counts[0] = scanned, counts[1] = resaved.
 func _walk_uids(dir: String, counts: Array, failed: Array) -> void:
 	var d := DirAccess.open(dir)
@@ -46,8 +47,9 @@ func _walk_uids(dir: String, counts: Array, failed: Array) -> void:
 			continue
 		var full := dir.path_join(name)
 		if d.current_is_dir():
-			# Skip hidden dirs (e.g. .godot) and symlinked dirs.
-			if not name.begins_with(".") and not d.is_link(full):
+			# Skip symlinked directories (same convention as list_scripts/_walk_scripts).
+			# DirAccess already excludes hidden entries by default.
+			if not d.is_link(full):
 				_walk_uids(full, counts, failed)
 		elif name.ends_with(".tscn") or name.ends_with(".tres") or name.ends_with(".res"):
 			counts[0] += 1

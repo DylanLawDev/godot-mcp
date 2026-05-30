@@ -22,6 +22,8 @@ func _rm_recursive(path: String) -> void:
 	var d := DirAccess.open(path)
 	if d == null:
 		return
+	# Include hidden dirs so .hidden subdirectories are removed too.
+	d.include_hidden = true
 	d.list_dir_begin()
 	var name := d.get_next()
 	while name != "":
@@ -101,15 +103,17 @@ func test_update_project_uids_rejects_missing_root() -> void:
 	assert_false(r["ok"], str(r))
 
 func test_update_project_uids_default_path_runs_without_error() -> void:
-	# No args — defaults to res://. Just verify it completes with ok=true.
+	# Call with NO args to exercise the args.get("path", "res://") default branch.
+	# This walks the real project tree (res://); it may resave tracked files. We assert
+	# only the result shape and that the call succeeds — we do not assert specific counts
+	# so the test stays stable regardless of what resources exist in the project.
 	var r := UidTools.new().update_project_uids({})
 	assert_true(r["ok"], str(r))
 	var v: Dictionary = r["value"]
 	assert_true(v.has("scanned"), str(v))
 	assert_true(v.has("resaved"), str(v))
 	assert_true(v.has("failed"), str(v))
-	assert_true(v["scanned"] >= 0)
-	assert_true(v["resaved"] >= 0)
+	assert_true(v["scanned"] is int and v["scanned"] >= 0, "scanned must be int >= 0: " + str(v))
 
 func test_update_project_uids_counts_valid_resources() -> void:
 	_setup()

@@ -622,6 +622,40 @@ func test_create_scene_overwrite_guard() -> void:
 	inst.free()
 	_cleanup_temp_scenes()
 
+# A non-bool truthy overwrite (e.g. the string "false") must NOT clobber an existing
+# scene — the destructive flag is honored only on a real boolean true.
+func test_create_scene_overwrite_rejects_non_bool() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r1: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D"})
+	assert_true(r1["ok"], str(r1.get("error", "")))
+	# String "false" is truthy in GDScript but must be rejected for a destructive flag.
+	var r2: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node", "overwrite": "false"})
+	assert_false(r2["ok"], "String 'false' overwrite must not clobber")
+	assert_true(r2["error"].contains("overwrite"), "Unexpected error: " + r2["error"])
+	# The original Node2D root must be intact (not replaced by Node).
+	var loaded := load(_TEMP_SCENE)
+	var inst: Node = loaded.instantiate()
+	assert_eq(inst.get_class(), "Node2D", "Existing scene must be unchanged")
+	inst.free()
+	_cleanup_temp_scenes()
+
+# create_scene must create missing parent directories (like create_script), since
+# ResourceSaver.save does not mkdir and there is no separate mkdir tool.
+func test_create_scene_creates_parent_dirs() -> void:
+	var nested_dir := "res://_mcp_test_create_scene_dir"
+	var nested := nested_dir.path_join("sub/level.tscn")
+	if FileAccess.file_exists(nested):
+		DirAccess.remove_absolute(nested)
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": nested, "root_type": "Node2D"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	assert_true(FileAccess.file_exists(nested), "Expected file in created dir: " + nested)
+	# Clean up the file and the directories we created so the tree stays byte-clean.
+	DirAccess.remove_absolute(nested)
+	DirAccess.remove_absolute(nested_dir.path_join("sub"))
+	DirAccess.remove_absolute(nested_dir)
+
 # The returned value has the expected keys and uid is a String (possibly empty headlessly).
 func test_create_scene_value_shape() -> void:
 	_cleanup_temp_scenes()

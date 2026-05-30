@@ -464,7 +464,9 @@ func create_scene(args: Dictionary) -> Dictionary:
 	var path: String = v["path"]
 	if not path.ends_with(".tscn"):
 		return {"ok": false, "error": "Path must end with .tscn: " + path}
-	var overwrite := bool(args.get("overwrite", false))
+	# Strict `== true`: a destructive flag must not be tripped by a truthy non-bool
+	# (e.g. the string "false", which is truthy in GDScript) from an unvalidated client.
+	var overwrite: bool = args.get("overwrite", false) == true
 	if FileAccess.file_exists(path) and not overwrite:
 		return {"ok": false, "error": "File already exists: " + path + " (pass overwrite=true to replace)"}
 	var root_type := str(args.get("root_type", ""))
@@ -478,9 +480,19 @@ func create_scene(args: Dictionary) -> Dictionary:
 	node.free()
 	if pack_err != OK:
 		return {"ok": false, "error": "PackedScene.pack failed with error %d" % pack_err}
+	# Create parent dirs before saving, same as create_script — ResourceSaver.save
+	# does not mkdir, and there is no separate mkdir tool to do it first.
+	var dir := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		var derr := DirAccess.make_dir_recursive_absolute(dir)
+		if derr != OK:
+			return {"ok": false, "error": "Failed to create directory %s (error %d)" % [dir, derr]}
 	var err := ResourceSaver.save(ps, path)
 	if err != OK:
 		return {"ok": false, "error": "ResourceSaver.save error %d" % err}
+	# Take over the cache slot so a subsequent load(path) returns this scene rather
+	# than a stale PackedScene cached from a prior load of the same path (overwrite case).
+	ps.take_over_path(path)
 	_rescan_filesystem()
 	var uid_id := ResourceLoader.get_resource_uid(path)
 	var uid_str := ResourceUID.id_to_text(uid_id) if uid_id != ResourceUID.INVALID_ID else ""

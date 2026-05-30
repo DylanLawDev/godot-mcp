@@ -148,7 +148,7 @@ GODOT=godot4 addons/godot_mcp/runtime/run_scenario.sh <scenario.json> <out.json>
 | `input_action` | `action`, `mode` (`press`/`release`/`tap`), `strength?` | Drive a project-input-map action; validates the action exists in `InputMap`. `tap` = press then auto-release the next frame |
 | `set_property` | `path`, `properties:{…}` | Arrange test conditions (via `node_ops.apply_props`) |
 | `call_method` | `path`, `method`, `args?` | Invoke a node method, capture the return value |
-| `create_node` | `parent_path`, `type`, `name`, `properties?` | Build test conditions (via `node_ops.make_node`, no undo) |
+| `create_node` | `parent_path`, `node_type`, `name`, `properties?` | Build test conditions (via `node_ops.make_node`, no undo). `node_type` carries the node class; `type` stays the step discriminator |
 | `delete_node` | `path` | Tear down test conditions |
 | `watch_signal` | `path`, `signal` | Begin counting a signal's emissions (must precede a `signal_count` assert) |
 | `assert` | `kind`, … | The verdict-bearing step (below) |

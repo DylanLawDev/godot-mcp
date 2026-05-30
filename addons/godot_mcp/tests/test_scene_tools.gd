@@ -65,6 +65,10 @@ func test_add_resource_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.add_resource({"path": ".", "property": "shape", "type": "RectangleShape2D"})["ok"])
 
+func test_set_anchor_preset_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.set_anchor_preset({"path": ".", "preset": 15})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -303,6 +307,16 @@ func test_encode_signals_reports_connection() -> void:
 	assert_true(found.has("renamed->queue_free"))
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
+
+# Task 2.5: _resolve_preset maps int passthrough + name variants to LayoutPreset ints.
+func test_resolve_preset_name_and_int() -> void:
+	var st = SceneTools.new()
+	assert_eq(st._resolve_preset(15), 15)
+	assert_eq(st._resolve_preset("PRESET_FULL_RECT"), 15)
+	assert_eq(st._resolve_preset("full_rect"), 15)
+	assert_eq(st._resolve_preset("center"), 8)
+	assert_eq(st._resolve_preset("CENTER"), 8)
+	assert_eq(st._resolve_preset("not_a_preset"), -1)
 
 # Task 2.4: _make_resource validates the type is an instantiable Resource subclass.
 func test_make_resource_validates_type() -> void:

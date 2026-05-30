@@ -280,6 +280,38 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
 
+func set_anchor_preset(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	if not (node is Control):
+		return {"ok": false, "error": "Node is not a Control: " + path}
+	var preset := _resolve_preset(args.get("preset"))
+	if preset == -1:
+		return {"ok": false, "error": "Unknown anchor preset: " + str(args.get("preset"))}
+	var keep := bool(args.get("keep_offsets", false))
+	var ctrl: Control = node
+	var old := {
+		"anchor_left": ctrl.anchor_left, "anchor_top": ctrl.anchor_top,
+		"anchor_right": ctrl.anchor_right, "anchor_bottom": ctrl.anchor_bottom,
+		"offset_left": ctrl.offset_left, "offset_top": ctrl.offset_top,
+		"offset_right": ctrl.offset_right, "offset_bottom": ctrl.offset_bottom,
+	}
+	var ur = _undo_redo()
+	if ur == null:
+		ctrl.set_anchors_preset(preset, keep)
+	else:
+		ur.create_action("MCP: set anchor preset")
+		ur.add_do_method(ctrl, "set_anchors_preset", preset, keep)
+		for prop in old.keys():
+			ur.add_undo_property(ctrl, prop, old[prop])
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "preset": preset}}
+
 func add_resource(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
 	if root == null:
@@ -363,6 +395,25 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": {"paths": out}}
 
 # --- Pure helpers ---
+
+# Map a preset value (int passthrough, or a name like "PRESET_FULL_RECT" /
+# "full_rect" / "FULL_RECT") to a LayoutPreset int. Returns -1 if unknown.
+func _resolve_preset(value) -> int:
+	if typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT:
+		var i := int(value)
+		if i >= 0 and i <= 15:
+			return i
+		return -1
+	var key := str(value).strip_edges().to_upper()
+	if key.begins_with("PRESET_"):
+		key = key.substr("PRESET_".length())
+	var table := {
+		"TOP_LEFT": 0, "TOP_RIGHT": 1, "BOTTOM_LEFT": 2, "BOTTOM_RIGHT": 3,
+		"CENTER_LEFT": 4, "CENTER_TOP": 5, "CENTER_RIGHT": 6, "CENTER_BOTTOM": 7,
+		"CENTER": 8, "LEFT_WIDE": 9, "TOP_WIDE": 10, "RIGHT_WIDE": 11,
+		"BOTTOM_WIDE": 12, "VCENTER_WIDE": 13, "HCENTER_WIDE": 14, "FULL_RECT": 15,
+	}
+	return table.get(key, -1)
 
 # Instantiate `type` as a Resource. Returns {ok, value: Resource} or {ok:false, error}.
 func _make_resource(type: String) -> Dictionary:

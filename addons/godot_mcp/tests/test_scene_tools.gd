@@ -37,6 +37,10 @@ func test_rename_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.rename_node({"path": "Foo", "name": "Bar"})["ok"])
 
+func test_get_signals_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.get_signals({"path": "."})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -256,6 +260,24 @@ func test_move_into_own_descendant_guard() -> void:
 	var branch := st._resolve(root, "Branch")
 	var leaf := st._resolve(root, "Branch/Leaf")
 	assert_true(branch.is_ancestor_of(leaf))
+	root.free()
+
+# Task 2.1: _encode_signals reports a connection's target path + method, with the
+# target path expressed relative to the scene root.
+func test_encode_signals_reports_connection() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")  # Node2D, has "ready" signal
+	var leaf := st._resolve(root, "Branch/Leaf")
+	# Connect Child.renamed -> Leaf.queue_free (queue_free exists on every Node).
+	child.connect("renamed", Callable(leaf, "queue_free"))
+	var sigs: Array = st._encode_signals(child, root)
+	var found := {}
+	for s in sigs:
+		for c in s["connections"]:
+			found[str(s["name"]) + "->" + str(c["method"])] = c["target_path"]
+	assert_true(found.has("renamed->queue_free"))
+	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
 
 # Task 1.4: renaming sets the node name (we read it back since Godot may de-dup).

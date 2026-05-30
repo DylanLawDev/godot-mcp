@@ -211,7 +211,44 @@ func rename_node(args: Dictionary) -> Dictionary:
 	# Godot may de-duplicate names, so report the actual resulting name.
 	return {"ok": true, "value": {"path": str(root.get_path_to(node)), "name": str(node.name)}}
 
+func get_signals(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	return {"ok": true, "value": {"path": path, "signals": _encode_signals(node, root)}}
+
 # --- Pure helpers ---
+
+# Encode `node`'s signals with their current connections. A connection target that
+# is the root or a descendant of root is reported as a root-relative path; anything
+# else (an outside object) is reported by its class name.
+func _encode_signals(node: Node, root: Node) -> Array:
+	var out := []
+	for sig in node.get_signal_list():
+		var name: String = sig["name"]
+		var conns := []
+		for c in node.get_signal_connection_list(name):
+			var callable: Callable = c["callable"]
+			var target = callable.get_object()
+			var target_path: String
+			if target is Node and (target == root or root.is_ancestor_of(target)):
+				target_path = str(root.get_path_to(target))
+			elif target != null:
+				target_path = (target as Object).get_class()
+			else:
+				target_path = ""
+			conns.append({
+				"target_path": target_path,
+				"method": str(callable.get_method()),
+				"flags": int(c["flags"]),
+			})
+		out.append({"name": name, "args": sig["args"], "connections": conns})
+	return out
+
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.
 func _set_owner_recursive(node: Node, root: Node) -> void:

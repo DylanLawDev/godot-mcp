@@ -61,6 +61,10 @@ func test_find_nodes_in_group_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.find_nodes_in_group({"group": "enemies"})["ok"])
 
+func test_add_resource_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.add_resource({"path": ".", "property": "shape", "type": "RectangleShape2D"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -299,6 +303,25 @@ func test_encode_signals_reports_connection() -> void:
 	assert_true(found.has("renamed->queue_free"))
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
+
+# Task 2.4: _make_resource validates the type is an instantiable Resource subclass.
+func test_make_resource_validates_type() -> void:
+	var st = SceneTools.new()
+	var ok_res: Dictionary = st._make_resource("RectangleShape2D")
+	assert_true(ok_res["ok"])
+	assert_true(ok_res["value"] is Resource)
+	# A Node is not a Resource; a bogus class does not exist.
+	assert_false(st._make_resource("Node2D")["ok"])
+	assert_false(st._make_resource("NotARealClass")["ok"])
+
+# Task 2.4: a built resource assigns onto a real Resource property of a node.
+func test_make_resource_assigns_onto_node_property() -> void:
+	var st = SceneTools.new()
+	var node := CollisionShape2D.new()
+	var res: Resource = st._make_resource("RectangleShape2D")["value"]
+	node.set("shape", res)
+	assert_eq(node.shape, res)
+	node.free()
 
 # Task 2.3: _find_in_group walks a detached subtree and returns the root-relative
 # paths of exactly the nodes that are in the group.

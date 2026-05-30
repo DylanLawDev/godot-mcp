@@ -280,6 +280,44 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
 
+func add_resource(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var type := str(args.get("type", ""))
+	var made := _make_resource(type)
+	if not made["ok"]:
+		return {"ok": false, "error": made["error"]}
+	var property := str(args.get("property", ""))
+	var known := {}
+	for p in node.get_property_list():
+		known[p["name"]] = true
+	if not known.has(property):
+		return {"ok": false, "error": "No such property: " + property}
+	var res: Resource = made["value"]
+	var sub = args.get("sub_properties", {})
+	if typeof(sub) == TYPE_DICTIONARY and not sub.is_empty():
+		var res_known := {}
+		for p in res.get_property_list():
+			res_known[p["name"]] = true
+		for name in sub.keys():
+			if res_known.has(name):
+				res.set(name, str_to_var(str(sub[name])))
+	var old = node.get(property)
+	var ur = _undo_redo()
+	if ur == null:
+		node.set(property, res)
+	else:
+		ur.create_action("MCP: add resource")
+		ur.add_do_property(node, property, res)
+		ur.add_undo_property(node, property, old)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "property": property, "type": type}}
+
 func get_node_groups(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
 	if root == null:
@@ -325,6 +363,17 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": {"paths": out}}
 
 # --- Pure helpers ---
+
+# Instantiate `type` as a Resource. Returns {ok, value: Resource} or {ok:false, error}.
+func _make_resource(type: String) -> Dictionary:
+	if not ClassDB.class_exists(type) or not ClassDB.is_parent_class(type, "Resource"):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	if not ClassDB.can_instantiate(type):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	var inst = ClassDB.instantiate(type)
+	if not (inst is Resource):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	return {"ok": true, "value": inst}
 
 # A node's groups as plain Strings (get_groups returns StringNames).
 func _groups_as_strings(node: Node) -> Array:

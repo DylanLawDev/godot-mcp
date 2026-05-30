@@ -126,3 +126,13 @@ func test_clear_output_clears_injected_capture() -> void:
 	assert_true(r["ok"])
 	assert_eq(r["value"]["cleared"], true)
 	assert_eq(after["value"]["entries"].size(), 0)
+
+# Review fix (PR #10): ERR_FAIL_COND_MSG-style errors carry the actionable text in
+# `rationale` while `code` is just the failed condition. Capture rationale so
+# get_editor_errors surfaces the explanation, not only the condition.
+func test_capture_records_rationale() -> void:
+	var cap = OutputCapture.new()
+	cap._log_error("f", "file.gd", 7, "Condition \"x\" is true.", "x must be set first", false, Logger.ERROR_TYPE_ERROR, [])
+	var es := cap.entries()
+	assert_eq(es[0]["message"], "Condition \"x\" is true.")
+	assert_eq(es[0]["rationale"], "x must be set first")

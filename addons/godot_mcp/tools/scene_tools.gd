@@ -313,6 +313,11 @@ func attach_script(args: Dictionary) -> Dictionary:
 	var base := str(scr.get_instance_base_type())
 	if not _script_compatible(node.get_class(), base):
 		return {"ok": false, "error": "Script extends " + base + ", incompatible with node type " + node.get_class()}
+	# set_script instantiates the script (calling _init with no args); if _init requires
+	# arguments the instance can't be built and the attachment silently fails, leaving
+	# get_script() null. Detect that up front rather than reporting a false success.
+	if _script_needs_init_args(scr):
+		return {"ok": false, "error": "Cannot attach: the script's _init() requires arguments"}
 	var old = node.get_script()
 	var ur = _undo_redo()
 	if ur == null:
@@ -515,13 +520,14 @@ func _set_groups(node: Node, desired: Array) -> void:
 		node.add_to_group(g, true)
 
 # Compute {added, removed} string arrays moving from `current` to `desired`. Groups
-# whose name begins with "_" are engine/editor-internal (Godot reserves that prefix)
-# and are never removed, so set_node_groups can't silently clear editor metadata.
+# whose name begins with "_" are engine/editor-internal (Godot reserves that prefix):
+# they are never removed AND never added, so set_node_groups can neither clear editor
+# metadata nor inject a persistent internal group whose addition couldn't be undone.
 func _group_diff(current: Array, desired: Array) -> Dictionary:
 	var added := []
 	var removed := []
 	for g in desired:
-		if not current.has(g):
+		if not current.has(g) and not str(g).begins_with("_"):
 			added.append(g)
 	for g in current:
 		if not desired.has(g) and not str(g).begins_with("_"):
@@ -588,6 +594,18 @@ func _script_compatible(node_class: String, base: String) -> bool:
 	if base == "":
 		return true
 	return ClassDB.is_parent_class(node_class, base)
+
+# Pure: does this script's _init() (own or inherited) require arguments? Such a script
+# cannot be attached via set_script, which instantiates it with zero args. Determined
+# by reflection (args minus default_args) so we never trigger the failing instantiation.
+func _script_needs_init_args(scr) -> bool:
+	var s = scr
+	while s != null:
+		for m in s.get_script_method_list():
+			if m["name"] == "_init":
+				return m["args"].size() - m["default_args"].size() > 0
+		s = s.get_base_script()
+	return false
 
 # Pure: is a resource of class `res_type` assignable to a property described by
 # `(prop_type, prop_class)` from get_property_list? Object properties that declare a

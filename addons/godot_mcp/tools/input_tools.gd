@@ -31,6 +31,10 @@ func set_input_action(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Invalid action name: " + str(args.get("name", ""))}
 	if args.has("deadzone") and not (typeof(args["deadzone"]) in [TYPE_FLOAT, TYPE_INT]):
 		return {"ok": false, "error": "'deadzone' must be a number"}
+	# Reject a non-array `events` up front: iterating a Dictionary/object would reset
+	# the action's bindings to empty and silently wipe the existing inputs.
+	if args.has("events") and typeof(args["events"]) != TYPE_ARRAY:
+		return {"ok": false, "error": "'events' must be an array"}
 	var key := _PREFIX + name
 	var existing := {"deadzone": 0.5, "events": []}
 	var cur = ProjectSettings.get_setting(key) if ProjectSettings.has_setting(key) else null
@@ -58,11 +62,13 @@ func set_input_action(args: Dictionary) -> Dictionary:
 
 # Pure: an action name must be non-empty and free of characters that have meaning
 # in the project.godot config or the "input/" key namespace (slashes, '=', control
-# chars). Defense-in-depth in the spirit of paths.gd — junk names are useless anyway.
+# chars). "." is rejected too: Godot reads "<action>.<feature>" as a per-platform
+# feature override, so get_input_actions hides dotted names — accepting one here would
+# create an action the caller can never see. Defense-in-depth in the spirit of paths.gd.
 func _valid_action_name(name: String) -> bool:
 	if name == "":
 		return false
-	for ch in ["/", "=", "\n", "\r", "\t", "[", "]"]:
+	for ch in ["/", "=", ".", "\n", "\r", "\t", "[", "]"]:
 		if ch in name:
 			return false
 	return true

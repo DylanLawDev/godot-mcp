@@ -107,3 +107,17 @@ func test_set_input_action_integration() -> void:
 	var f := FileAccess.open("res://project.godot", FileAccess.WRITE)
 	f.store_buffer(original)
 	f = null
+
+# Review fix (PR #10): a "." in an action name is treated as a feature-tag override
+# by get_input_actions and hidden, so set_input_action must reject it (otherwise the
+# caller creates an action it can never see). Returns before any save().
+func test_set_input_action_rejects_dotted_name() -> void:
+	var input = InputTools.new()
+	assert_false(input.set_input_action({"name": "move.left"})["ok"])
+
+# Review fix (PR #10): a non-array `events` must be rejected, not silently treated as
+# empty — iterating a Dictionary's keys would wipe an existing action's bindings.
+# This returns before set_setting/save, so project.godot is untouched.
+func test_set_input_action_rejects_non_array_events() -> void:
+	var input = InputTools.new()
+	assert_false(input.set_input_action({"name": "_mcp_safe_name", "events": {"a": 1}})["ok"])

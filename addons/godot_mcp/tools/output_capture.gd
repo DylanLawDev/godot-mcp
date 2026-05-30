@@ -21,9 +21,12 @@ func _log_message(message, error) -> void:
 	_evict()
 	_mutex.unlock()
 
-func _log_error(_function, _file, line, code, _rationale, _editor_notify, error_type, _script_backtraces) -> void:
+func _log_error(_function, _file, line, code, rationale, _editor_notify, error_type, _script_backtraces) -> void:
 	_mutex.lock()
-	_entries.append({"type": "error", "line": line, "message": code, "error_type": error_type})
+	# `code` is the failed condition / error code; `rationale` is the human-readable
+	# explanation passed by ERR_*_MSG macros and push_error. Keep both — the rationale
+	# is the actionable part and would otherwise be dropped.
+	_entries.append({"type": "error", "line": line, "message": code, "rationale": rationale, "error_type": error_type})
 	_evict()
 	_mutex.unlock()
 

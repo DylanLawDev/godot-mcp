@@ -509,3 +509,30 @@ func test_scripts_preserved_checks_subtree_shape() -> void:
 	var dup := Node.new()  # no children
 	assert_false(st._scripts_preserved(orig, dup))
 	orig.free(); dup.free()
+
+# Review fix (PR #10): reserved "_"-prefixed groups are engine/editor-internal. The
+# diff already refuses to REMOVE them; it must also refuse to ADD them, otherwise an
+# add can never be undone (the undo's removal is itself refused).
+func test_group_diff_does_not_add_reserved_groups() -> void:
+	var st = SceneTools.new()
+	var diff: Dictionary = st._group_diff(["a"], ["a", "_edit_lock_", "b"])
+	assert_has(diff["added"], "b")
+	assert_false(diff["added"].has("_edit_lock_"))
+
+# Review fix (PR #10): a script whose _init() requires arguments can't be attached via
+# set_script (Godot instantiates it with zero args and the attachment silently fails),
+# so detect it up front by reflection rather than committing a broken attachment.
+func test_script_needs_init_args() -> void:
+	var st = SceneTools.new()
+	var pa := "res://_mcp_initarg_test.gd"
+	var fa := FileAccess.open(pa, FileAccess.WRITE)
+	fa.store_string("extends Node\nfunc _init(x):\n\tpass\n")
+	fa = null
+	var pb := "res://_mcp_clean_test.gd"
+	var fb := FileAccess.open(pb, FileAccess.WRITE)
+	fb.store_string("extends Node\n")
+	fb = null
+	assert_true(st._script_needs_init_args(load(pa)))
+	assert_false(st._script_needs_init_args(load(pb)))  # no required-arg _init
+	DirAccess.remove_absolute(pa)
+	DirAccess.remove_absolute(pb)

@@ -536,3 +536,194 @@ func test_script_needs_init_args() -> void:
 	assert_false(st._script_needs_init_args(load(pb)))  # no required-arg _init
 	DirAccess.remove_absolute(pa)
 	DirAccess.remove_absolute(pb)
+
+# --- create_scene tests ---
+
+const _TEMP_SCENE := "res://_mcp_test_create_scene.tscn"
+
+func _cleanup_temp_scenes() -> void:
+	if FileAccess.file_exists(_TEMP_SCENE):
+		DirAccess.remove_absolute(_TEMP_SCENE)
+
+# Creating a Node2D-rooted scene succeeds; the file exists; reloading yields the
+# correct root type and name.
+func test_create_scene_node2d_root_succeeds() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D", "root_name": "MyRoot"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	assert_true(FileAccess.file_exists(_TEMP_SCENE), "Expected file to exist: " + _TEMP_SCENE)
+	var loaded := load(_TEMP_SCENE)
+	assert_ne(loaded, null)
+	var inst: Node = loaded.instantiate()
+	assert_eq(inst.get_class(), "Node2D")
+	assert_eq(str(inst.name), "MyRoot")
+	inst.free()
+	_cleanup_temp_scenes()
+
+# When root_name is omitted, it defaults to root_type.
+func test_create_scene_default_root_name_equals_root_type() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	assert_eq(r["value"]["root_name"], "Node2D")
+	var loaded := load(_TEMP_SCENE)
+	assert_ne(loaded, null)
+	var inst: Node = loaded.instantiate()
+	assert_eq(str(inst.name), "Node2D")
+	inst.free()
+	_cleanup_temp_scenes()
+
+# An invalid root_type (not a Node subclass) must error; no file written.
+func test_create_scene_invalid_root_type_errors() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "NotARealClass"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains("Invalid node type: NotARealClass"), "Unexpected error: " + r["error"])
+	assert_false(FileAccess.file_exists(_TEMP_SCENE), "File should NOT have been written")
+	_cleanup_temp_scenes()
+
+# A path not ending in .tscn must error; no file written.
+func test_create_scene_non_tscn_path_errors() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": "res://_mcp_test.gd", "root_type": "Node2D"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains(".tscn"), "Unexpected error: " + r["error"])
+	assert_false(FileAccess.file_exists("res://_mcp_test.gd"), "File should NOT have been written")
+
+# A path with '..' traversal must be rejected by Paths.validate.
+func test_create_scene_traversal_path_errors() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": "res://../etc/evil.tscn", "root_type": "Node2D"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains("escapes"), "Unexpected error: " + r["error"])
+
+# Saving to an existing path without overwrite=true must error; with overwrite=true it succeeds.
+func test_create_scene_overwrite_guard() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	# Create the file first.
+	var r1: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D"})
+	assert_true(r1["ok"], str(r1.get("error", "")))
+	# Second attempt without overwrite should fail.
+	var r2: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node"})
+	assert_false(r2["ok"])
+	assert_true(r2["error"].contains("overwrite"), "Unexpected error: " + r2["error"])
+	# Third attempt with overwrite=true should succeed.
+	var r3: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node", "overwrite": true})
+	assert_true(r3["ok"], str(r3.get("error", "")))
+	var loaded := load(_TEMP_SCENE)
+	assert_ne(loaded, null)
+	var inst: Node = loaded.instantiate()
+	assert_eq(inst.get_class(), "Node")
+	inst.free()
+	_cleanup_temp_scenes()
+
+# A non-bool truthy overwrite (e.g. the string "false") must NOT clobber an existing
+# scene — the destructive flag is honored only on a real boolean true.
+func test_create_scene_overwrite_rejects_non_bool() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r1: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D"})
+	assert_true(r1["ok"], str(r1.get("error", "")))
+	# String "false" is truthy in GDScript but must be rejected for a destructive flag.
+	var r2: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node", "overwrite": "false"})
+	assert_false(r2["ok"], "String 'false' overwrite must not clobber")
+	assert_true(r2["error"].contains("overwrite"), "Unexpected error: " + r2["error"])
+	# The original Node2D root must be intact (not replaced by Node).
+	var loaded := load(_TEMP_SCENE)
+	var inst: Node = loaded.instantiate()
+	assert_eq(inst.get_class(), "Node2D", "Existing scene must be unchanged")
+	inst.free()
+	_cleanup_temp_scenes()
+
+# create_scene must create missing parent directories (like create_script), since
+# ResourceSaver.save does not mkdir and there is no separate mkdir tool.
+func test_create_scene_creates_parent_dirs() -> void:
+	var nested_dir := "res://_mcp_test_create_scene_dir"
+	var nested := nested_dir.path_join("sub/level.tscn")
+	if FileAccess.file_exists(nested):
+		DirAccess.remove_absolute(nested)
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": nested, "root_type": "Node2D"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	assert_true(FileAccess.file_exists(nested), "Expected file in created dir: " + nested)
+	# Clean up the file and the directories we created so the tree stays byte-clean.
+	DirAccess.remove_absolute(nested)
+	DirAccess.remove_absolute(nested_dir.path_join("sub"))
+	DirAccess.remove_absolute(nested_dir)
+
+# The returned value has the expected keys and uid is a String (possibly empty headlessly).
+func test_create_scene_value_shape() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node2D", "root_name": "Root"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	var v: Dictionary = r["value"]
+	assert_true(v.has("path"), "Missing 'path' key")
+	assert_true(v.has("root_type"), "Missing 'root_type' key")
+	assert_true(v.has("root_name"), "Missing 'root_name' key")
+	assert_true(v.has("uid"), "Missing 'uid' key")
+	assert_eq(v["path"], _TEMP_SCENE)
+	assert_eq(v["root_type"], "Node2D")
+	assert_eq(v["root_name"], "Root")
+	assert_true(typeof(v["uid"]) == TYPE_STRING, "'uid' must be a String")
+	_cleanup_temp_scenes()
+
+# Verify the saved .tscn file text is a valid Godot scene format header.
+# uid:// may or may not be present depending on the editor's UID registry
+# (headlessly it is absent), so we only assert the format header is present.
+func test_create_scene_file_has_gd_scene_header() -> void:
+	_cleanup_temp_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.create_scene({"path": _TEMP_SCENE, "root_type": "Node"})
+	assert_true(r["ok"], str(r.get("error", "")))
+	var f := FileAccess.open(_TEMP_SCENE, FileAccess.READ)
+	assert_ne(f, null, "Could not open saved scene file")
+	var header := f.get_line()
+	f = null
+	assert_true(header.contains("[gd_scene"), "Expected [gd_scene header in .tscn, got: " + header)
+	_cleanup_temp_scenes()
+
+# --- save_scene tests (headless guard-level only) ---
+
+const _TEMP_SAVE_SCENE := "res://_mcp_test_save_scene.tscn"
+
+func _cleanup_temp_save_scenes() -> void:
+	if FileAccess.file_exists(_TEMP_SAVE_SCENE):
+		DirAccess.remove_absolute(_TEMP_SAVE_SCENE)
+
+# No args, no scene open -> error "No scene is currently open".
+func test_save_scene_no_args_no_scene_open() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({})
+	assert_false(r["ok"])
+	assert_eq(r["error"], "No scene is currently open")
+
+# Valid path arg, no scene open -> still errors "No scene is currently open";
+# the file must NOT be written (path validation passes but scene check blocks it).
+func test_save_scene_valid_path_no_scene_open() -> void:
+	_cleanup_temp_save_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": _TEMP_SAVE_SCENE})
+	assert_false(r["ok"])
+	assert_eq(r["error"], "No scene is currently open")
+	assert_false(FileAccess.file_exists(_TEMP_SAVE_SCENE), "File should NOT have been written")
+	_cleanup_temp_save_scenes()
+
+# Path with '..' traversal -> rejected by Paths.validate before the scene check.
+func test_save_scene_traversal_path_rejected() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": "res://../etc/evil.tscn"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains("escapes"), "Unexpected error: " + r["error"])
+
+# Non-.tscn path -> suffix check fails before the scene check.
+func test_save_scene_non_tscn_path_rejected() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": "res://output.gd"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains(".tscn"), "Unexpected error: " + r["error"])

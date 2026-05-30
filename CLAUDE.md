@@ -17,6 +17,9 @@ All code lives under `addons/godot_mcp/`. Every Godot editor API is main-thread 
 # Run a single suite directly:
 godot4 --headless --path . --script addons/godot_mcp/tests/test_script_tools.gd
 
+# Run a headless scenario (runtime testing, separate from the unit suite):
+addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/move_right.json /tmp/out.json
+
 # Start the editor (auto-starts the MCP server when the plugin is enabled):
 godot4 --editor --path .
 
@@ -58,3 +61,10 @@ Tests subclass `tests/test_case.gd` (a `SceneTree` with `assert_*` helpers); any
 ## Scope
 
 v1 is the lean editor core (39 tools: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`, `list_scripts`, `get_open_scripts`, `validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`, `get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`, `duplicate_node`, `move_node`, `rename_node`, `get_signals`, `connect_signal`, `disconnect_signal`, `get_node_groups`, `set_node_groups`, `find_nodes_in_group`, `add_resource`, `set_anchor_preset`, `attach_script`, `create_scene`, `save_scene`, `get_output_log`, `clear_output`, `get_editor_errors`, `get_editor_screenshot`, `reload_project`, `get_input_actions`, `set_input_action`, `get_uid`, `update_project_uids`), plus the MCP resource layer serving `godot://project/info`, `godot://scene/current`, and `godot://script/current`. Run/feedback tools and in-game runtime tools (screenshot, input injection) remain out of scope for v1 — see the README and `docs/superpowers/plans/`.
+
+Beyond the in-editor MCP tools, a **headless scenario runner** (`addons/godot_mcp/runtime/`)
+lets Claude launch a separate `--headless` Godot process that runs a real scene, drives it
+with input-map actions, and manipulates/inspects live runtime nodes, emitting a pass/fail
+results JSON. It is launched via Bash (`runtime/run_scenario.sh`), not over MCP, and shares
+node-manipulation logic with the editor tools through `utils/node_ops.gd`. Action input is
+poll-observable only; raw `InputEvent` synthesis and screenshots are deferred (v2).

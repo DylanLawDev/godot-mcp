@@ -54,7 +54,9 @@ func _walk_uids(dir: String, counts: Array, failed: Array) -> void:
 				_walk_uids(full, counts, failed)
 		elif name.ends_with(".tscn") or name.ends_with(".tres") or name.ends_with(".res"):
 			counts[0] += 1
-			var res: Resource = ResourceLoader.load(full)
+			# Load uncached (CACHE_MODE_IGNORE) so a refresh of UID metadata never
+			# persists unsaved inspector edits sitting on a cached resource instance.
+			var res: Resource = ResourceLoader.load(full, "", ResourceLoader.CACHE_MODE_IGNORE)
 			if res == null:
 				failed.append({"path": full, "error": "ResourceLoader.load returned null"})
 			else:

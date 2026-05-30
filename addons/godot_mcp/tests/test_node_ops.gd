@@ -27,6 +27,8 @@ func test_make_node() -> void:
 func test_value_applied_coercion() -> void:
 	assert_true(NodeOps.value_applied(1, 1.0))   # int/float coercion
 	assert_true(NodeOps.value_applied("a", "a"))
+	assert_true(NodeOps.value_applied(StringName("a"), "a"))   # StringName/String coercion (e.g. `name`)
+	assert_false(NodeOps.value_applied(StringName("a"), "b"))
 	assert_false(NodeOps.value_applied("a", 1))   # mismatched types never crash
 
 func test_apply_props_sets_and_reports() -> void:

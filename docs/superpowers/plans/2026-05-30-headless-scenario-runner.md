@@ -312,7 +312,7 @@ func test_create_and_delete_node() -> void:
 	var root := _make_root()
 	var eng := ScenarioEngine.new()
 	eng.set_root(root)
-	var c := eng.execute({"type": "create_node", "parent_path": ".", "type": "Node", "name": "Made"})
+	var c := eng.execute({"type": "create_node", "parent_path": ".", "node_type": "Node", "name": "Made"})
 	assert_true(c["ok"])
 	assert_ne(root.get_node_or_null("Made"), null)
 	var d := eng.execute({"type": "delete_node", "path": "Made"})
@@ -488,10 +488,10 @@ func _create_node(step: Dictionary) -> Dictionary:
 	var parent := NodeOps.resolve(root, str(step.get("parent_path", ".")))
 	if parent == null:
 		return _step_fail("create_node", "Parent not found: " + str(step.get("parent_path", ".")))
-	var type := str(step.get("type", ""))
-	var node := NodeOps.make_node(type, str(step.get("name", type)))
+	var node_class := str(step.get("node_type", ""))
+	var node := NodeOps.make_node(node_class, str(step.get("name", node_class)))
 	if node == null:
-		return _step_fail("create_node", "Invalid node type: " + type)
+		return _step_fail("create_node", "Invalid node type: " + node_class)
 	parent.add_child(node)
 	node.owner = root
 	var props = step.get("properties", {})

@@ -457,6 +457,41 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	_find_in_group(root, root, group, out)
 	return {"ok": true, "value": {"paths": out}}
 
+func save_scene(args: Dictionary) -> Dictionary:
+	# 1. Validate path arg first (so invalid-path errors surface even with no scene open).
+	var path_arg := str(args.get("path", ""))
+	var path := ""
+	if path_arg != "":
+		var v := Paths.validate(path_arg)
+		if not v["ok"]:
+			return {"ok": false, "error": v["error"]}
+		path = v["path"]
+		if not path.ends_with(".tscn"):
+			return {"ok": false, "error": "Path must end with .tscn: " + path}
+	# 2. Require an open scene.
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	# 3a. No path: save the open scene in-place via the editor.
+	if path == "":
+		if root.scene_file_path == "":
+			return {"ok": false, "error": "current scene has no path; pass {path} to save as a variant"}
+		var plugin = Engine.get_meta("GodotMCPPlugin")
+		var err: int = plugin.get_editor_interface().save_scene()
+		if err != OK:
+			return {"ok": false, "error": "EditorInterface.save_scene failed with error %d" % err}
+		return {"ok": true, "value": {"path": root.scene_file_path, "variant": false}}
+	# 3b. Path provided: pack the live tree and write a variant copy without touching the editor.
+	var ps := PackedScene.new()
+	var perr := ps.pack(root)
+	if perr != OK:
+		return {"ok": false, "error": "PackedScene.pack failed with error %d" % perr}
+	var serr := ResourceSaver.save(ps, path)
+	if serr != OK:
+		return {"ok": false, "error": "ResourceSaver.save error %d" % serr}
+	_rescan_filesystem()
+	return {"ok": true, "value": {"path": path, "variant": true}}
+
 func create_scene(args: Dictionary) -> Dictionary:
 	var v := Paths.validate(str(args.get("path", "")))
 	if not v["ok"]:

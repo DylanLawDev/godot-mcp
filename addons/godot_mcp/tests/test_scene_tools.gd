@@ -687,3 +687,43 @@ func test_create_scene_file_has_gd_scene_header() -> void:
 	f = null
 	assert_true(header.contains("[gd_scene"), "Expected [gd_scene header in .tscn, got: " + header)
 	_cleanup_temp_scenes()
+
+# --- save_scene tests (headless guard-level only) ---
+
+const _TEMP_SAVE_SCENE := "res://_mcp_test_save_scene.tscn"
+
+func _cleanup_temp_save_scenes() -> void:
+	if FileAccess.file_exists(_TEMP_SAVE_SCENE):
+		DirAccess.remove_absolute(_TEMP_SAVE_SCENE)
+
+# No args, no scene open -> error "No scene is currently open".
+func test_save_scene_no_args_no_scene_open() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({})
+	assert_false(r["ok"])
+	assert_eq(r["error"], "No scene is currently open")
+
+# Valid path arg, no scene open -> still errors "No scene is currently open";
+# the file must NOT be written (path validation passes but scene check blocks it).
+func test_save_scene_valid_path_no_scene_open() -> void:
+	_cleanup_temp_save_scenes()
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": _TEMP_SAVE_SCENE})
+	assert_false(r["ok"])
+	assert_eq(r["error"], "No scene is currently open")
+	assert_false(FileAccess.file_exists(_TEMP_SAVE_SCENE), "File should NOT have been written")
+	_cleanup_temp_save_scenes()
+
+# Path with '..' traversal -> rejected by Paths.validate before the scene check.
+func test_save_scene_traversal_path_rejected() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": "res://../etc/evil.tscn"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains("escapes"), "Unexpected error: " + r["error"])
+
+# Non-.tscn path -> suffix check fails before the scene check.
+func test_save_scene_non_tscn_path_rejected() -> void:
+	var st = SceneTools.new()
+	var r: Dictionary = st.save_scene({"path": "res://output.gd"})
+	assert_false(r["ok"])
+	assert_true(r["error"].contains(".tscn"), "Unexpected error: " + r["error"])

@@ -37,7 +37,9 @@ func entries(limit: int = 0, errors_only: bool = false) -> Array:
 	_mutex.lock()
 	var out: Array = []
 	for e in _entries:
-		if errors_only and e.get("type") != "error":
+		# Errors-only keeps both _log_error entries (type "error") AND stderr-flagged
+		# log entries (printerr() arrives via _log_message with error == true).
+		if errors_only and e.get("type") != "error" and not e.get("error", false):
 			continue
 		out.append(e)
 	if limit > 0 and out.size() > limit:

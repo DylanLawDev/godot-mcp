@@ -140,6 +140,12 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Node not found: " + path}
 	var parent := node.get_parent()
 	var dup: Node = node.duplicate()
+	# Godot's duplicate() silently drops a node's script when that script's _init()
+	# declares required parameters, yielding a behaviorless copy. Detect that and fail
+	# loudly rather than committing a broken node the caller thinks is a faithful clone.
+	if not _scripts_preserved(node, dup):
+		dup.free()
+		return {"ok": false, "error": "Cannot duplicate: an attached script was dropped by duplicate() (its _init() likely requires parameters)"}
 	var new_name := str(args.get("new_name", ""))
 	if new_name != "":
 		dup.name = new_name
@@ -175,17 +181,19 @@ func move_node(args: Dictionary) -> Dictionary:
 	var keep := bool(args.get("keep_global_transform", true))
 	var old_parent := node.get_parent()
 	var old_index := node.get_index()
+	var old_owner := node.owner
+	var new_owner := _move_owner(old_owner, new_parent, root)
 	var ur = _undo_redo()
 	if ur == null:
 		node.reparent(new_parent, keep)
-		node.owner = root
+		node.owner = new_owner
 	else:
 		ur.create_action("MCP: move node")
 		ur.add_do_method(node, "reparent", new_parent, keep)
-		ur.add_do_property(node, "owner", root)
+		ur.add_do_property(node, "owner", new_owner)
 		ur.add_undo_method(node, "reparent", old_parent, keep)
 		ur.add_undo_method(old_parent, "move_child", node, old_index)
-		ur.add_undo_property(node, "owner", root)
+		ur.add_undo_property(node, "owner", old_owner)
 		ur.commit_action()
 	return {"ok": true, "value": {"path": str(root.get_path_to(node))}}
 
@@ -268,8 +276,11 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Node not found: " + to_path}
 	var sig := str(args.get("signal", ""))
 	var method := str(args.get("method", ""))
-	var cb := Callable(target, method)
-	if not source.has_signal(sig) or not source.is_connected(sig, cb):
+	# Use the connection's ACTUAL callable (which may carry bound args) rather than a
+	# freshly-built Callable(target, method); otherwise a bound connection reported by
+	# get_signals can't be matched and we'd wrongly claim it isn't connected.
+	var cb := _find_connection(source, sig, target, method)
+	if cb.is_null() or not source.is_connected(sig, cb):
 		return {"ok": false, "error": "Signal not connected: " + sig + " -> " + to_path + "." + method}
 	# Capture the original flags so undo restores the connection exactly (not just CONNECT_PERSIST).
 	var orig_flags := _connection_flags(source, sig, cb)
@@ -296,6 +307,12 @@ func attach_script(args: Dictionary) -> Dictionary:
 	if not loaded["ok"]:
 		return {"ok": false, "error": loaded["error"]}
 	var scr = loaded["value"]
+	# set_script silently no-ops when the script's native base type is incompatible with
+	# the node (e.g. a Node2D script on a Control), so validate up front rather than
+	# reporting a success that left the node's script unchanged.
+	var base := str(scr.get_instance_base_type())
+	if not _script_compatible(node.get_class(), base):
+		return {"ok": false, "error": "Script extends " + base + ", incompatible with node type " + node.get_class()}
 	var old = node.get_script()
 	var ur = _undo_redo()
 	if ur == null:
@@ -353,10 +370,19 @@ func add_resource(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": made["error"]}
 	var property := str(args.get("property", ""))
 	var known := {}
+	var prop_type := TYPE_NIL
+	var prop_class := ""
 	for p in node.get_property_list():
 		known[p["name"]] = true
+		if p["name"] == property:
+			prop_type = p["type"]
+			prop_class = str(p.get("class_name", ""))
 	if not known.has(property):
 		return {"ok": false, "error": "No such property: " + property}
+	# The property must accept the created resource, otherwise set() silently no-ops and
+	# we'd report a modification that never happened. Validate against the declared class.
+	if not _resource_assignable(type, prop_type, prop_class):
+		return {"ok": false, "error": "Resource type " + type + " is not assignable to property '" + property + "' (expects " + (prop_class if prop_class != "" else "non-object") + ")"}
 	var res: Resource = made["value"]
 	var sub_set := []
 	var sub_errors := []
@@ -488,7 +514,9 @@ func _set_groups(node: Node, desired: Array) -> void:
 	for g in diff["added"]:
 		node.add_to_group(g, true)
 
-# Compute {added, removed} string arrays moving from `current` to `desired`.
+# Compute {added, removed} string arrays moving from `current` to `desired`. Groups
+# whose name begins with "_" are engine/editor-internal (Godot reserves that prefix)
+# and are never removed, so set_node_groups can't silently clear editor metadata.
 func _group_diff(current: Array, desired: Array) -> Dictionary:
 	var added := []
 	var removed := []
@@ -496,7 +524,7 @@ func _group_diff(current: Array, desired: Array) -> Dictionary:
 		if not current.has(g):
 			added.append(g)
 	for g in current:
-		if not desired.has(g):
+		if not desired.has(g) and not str(g).begins_with("_"):
 			removed.append(g)
 	return {"added": added, "removed": removed}
 
@@ -541,6 +569,57 @@ func _connection_flags(source: Object, signal_name: String, cb: Callable) -> int
 			return int(c["flags"])
 	return Object.CONNECT_PERSIST
 
+# Find an existing `signal_name` connection on `source` whose callable targets `target`
+# with method `method`, returning the ACTUAL (possibly bound) Callable. Returns an empty
+# Callable when none matches. Matching on object+method lets us disconnect connections
+# that carry bound arguments, which a freshly built Callable(target, method) would miss.
+func _find_connection(source: Object, signal_name: String, target: Object, method: String) -> Callable:
+	if not source.has_signal(signal_name):
+		return Callable()
+	for c in source.get_signal_connection_list(signal_name):
+		var cb: Callable = c["callable"]
+		if cb.get_object() == target and str(cb.get_method()) == method:
+			return cb
+	return Callable()
+
+# Pure: can a script whose native base type is `base` attach to a node of `node_class`?
+# The node must be that base type or a subclass of it.
+func _script_compatible(node_class: String, base: String) -> bool:
+	if base == "":
+		return true
+	return ClassDB.is_parent_class(node_class, base)
+
+# Pure: is a resource of class `res_type` assignable to a property described by
+# `(prop_type, prop_class)` from get_property_list? Object properties that declare a
+# class only accept that class or a subclass; non-object properties accept nothing.
+func _resource_assignable(res_type: String, prop_type: int, prop_class: String) -> bool:
+	if prop_type != TYPE_OBJECT:
+		return false
+	if prop_class == "":
+		return true
+	return ClassDB.is_parent_class(res_type, prop_class)
+
+# Pure: choose the owner a moved node should keep. Preserve its existing owner when
+# that owner is still a valid ancestor after the move (so the saved scene is unchanged);
+# otherwise fall back to the scene root so the node still serializes where it landed.
+func _move_owner(old_owner: Node, new_parent: Node, root: Node) -> Node:
+	if old_owner != null and (old_owner == new_parent or old_owner.is_ancestor_of(new_parent)):
+		return old_owner
+	return root
+
+# Pure: true when `dup` kept every script `orig` carries across the whole subtree.
+# duplicate() drops a node's script when that script's _init() requires parameters.
+func _scripts_preserved(orig: Node, dup: Node) -> bool:
+	if orig.get_script() != null and dup.get_script() == null:
+		return false
+	var oc := orig.get_children()
+	var dc := dup.get_children()
+	if oc.size() != dc.size():
+		return false
+	for i in oc.size():
+		if not _scripts_preserved(oc[i], dc[i]):
+			return false
+	return true
 
 # Root `node` and its entire subtree at `root` so a duplicated/moved subtree serializes.
 func _set_owner_recursive(node: Node, root: Node) -> void:

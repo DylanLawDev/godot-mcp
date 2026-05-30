@@ -1,45 +1,40 @@
-# Godot MCP (pure-GDScript)
+# Godot MCP
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for the Godot
-game engine, implemented **entirely as a Godot editor plugin** — no Node, no
-external daemon, no compiled binary. The editor *is* the MCP server.
+**Drive the Godot editor from Claude Code (or any MCP client).** Read and edit
+your scripts, build and rearrange scenes, wire up signals, watch the output log,
+take screenshots, and even run your game headlessly to test it — all from a
+conversation with an AI agent.
 
-## Why
+Godot MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server
+implemented **entirely as a Godot editor plugin in pure GDScript**. There's no
+Node.js, no npm, no external daemon, and no compiled binary to install. You drop
+one addon into your project, enable it, and the editor itself becomes the server.
 
-Two problems with existing Godot MCPs motivated a fresh build:
+---
 
-1. **No Node requirement.** Existing servers need a Node/npm runtime installed
-   and version-matched. We want zero non-Godot dependencies.
-2. **Multiple Claude Code instances at once.** stdio-transport servers are
-   *spawned per client*, so each instance fights to own the connection to Godot.
-   We want many agents driving one editor simultaneously.
+## Quick start
 
-## How it works
+### 1. Install the plugin
 
-The Godot editor plugin hosts an **HTTP MCP server** (Streamable HTTP transport)
-on loopback. Claude Code connects to it as a *remote* server — it never spawns a
-process.
+Copy the `addons/godot_mcp/` folder from this repo into your Godot project's
+`addons/` directory, then enable it:
 
-```
-  Claude Code #1 ─┐
-  Claude Code #2 ─┼──HTTP──▶  Godot editor plugin  ──▶  in-process tools
-  Claude Code #3 ─┘          (TCPServer @127.0.0.1:8765)   (scene/script/...)
-```
+> **Project → Project Settings → Plugins → Godot MCP → Enable**
 
-- **No spawning → no collisions.** Every instance points at the same URL and
-  just connects. Multi-instance is structural, not bolted on.
-- **No bridge.** Tools run in-process on the editor's main thread. There is no
-  second protocol, no WebSocket, no glue process to maintain.
-- **Truly zero extra runtime.** Ships as one addon. `git clone` into
-  `addons/`, enable, done.
+That's it — no other dependencies. The moment the plugin is enabled, the editor
+starts hosting an MCP server on `127.0.0.1:8765`.
 
-### Connecting Claude Code
+> Targets **Godot 4.6.x**.
+
+### 2. Connect your AI agent
+
+With the Godot editor open, point Claude Code at the server:
 
 ```bash
 claude mcp add --transport http godot http://127.0.0.1:8765/mcp
 ```
 
-or project-scoped `.mcp.json`:
+Or add it to a project-scoped `.mcp.json`:
 
 ```json
 {
@@ -49,81 +44,202 @@ or project-scoped `.mcp.json`:
 }
 ```
 
-Note: there is no `"command"` field — Claude Code only ever *connects*.
+There is no `"command"` field — your agent only ever *connects* to the running
+editor; it never launches a process.
 
-### Lifecycle & scope
+### 3. Start building
 
-- **The editor must be open** — the editor hosts the server. No headless
-  per-operation spawning.
-- **One editor = one server on one port** (default `8765`, overridable). Run two
-  projects → two editors → two ports.
-- **Loopback only, no auth in v1.** Optional bearer token is a later add.
+Ask your agent things like *"add a CharacterBody2D to the current scene and
+attach a movement script,"* or *"find every TODO in my scripts,"* or *"run the
+game and check there are no errors in the output."* The sections below show
+everything it can do.
 
-## Why pure GDScript (not Rust/Python)
+---
 
-A separate daemon's only job would be translating MCP ⇄ Godot. But all Godot
-work *already* lives in GDScript, and **every Godot editor API is main-thread
-only** — so tool execution serializes on the editor's thread regardless of
-transport language. Rust's concurrency advantage never materializes; the bridge
-is pure overhead. Hosting MCP directly in the editor deletes the daemon, the
-cross-process protocol, and the per-platform distribution problem in one move.
+## What you can do
 
-The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
-Streamable HTTP transport permits plain `POST → application/json` responses, so
-v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
+Godot MCP exposes **39 tools** plus a set of read-only resources. Here's the full
+catalogue, grouped by what you'll use them for.
 
-## v1 scope (35 tools implemented)
+### 📄 Files & scripts
 
-The daily agent loop is *read code/scene → edit → run → see errors*:
+Read, search, write, and validate code without leaving the conversation.
 
-- **Files/scripts:** `read_file`, `list_dir`, `search_project`, `create_script`,
-  `edit_script` (whole-file overwrite *or* find/replace via `find`/`replace`/`replace_all`),
-  `validate_script`, `list_scripts` (recursive `.gd` listing with `class_name`/`extends`),
-  `get_open_scripts` (scripts open in the editor + the current one). Note: dedicated
-  `read_script`/`search_in_files` (godot-mcp-pro parity) are intentionally covered by the
-  generic `read_file`/`search_project` rather than added as separate tools.
-- **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
-  plus MCP resources `godot://project/info`, `godot://scene/current`,
-  `godot://script/current`
-- **Scenes** *(implemented)*: `get_scene_tree`, `get_node_properties`, `create_node`
-  (accepts optional `properties`), `delete_node`, `modify_node`, `duplicate_node`,
-  `move_node`, `rename_node` — all operate on the currently-open scene; the mutating
-  tools (`create_node`, `delete_node`, `modify_node`, `duplicate_node`, `move_node`,
-  `rename_node`) are registered as editor undo/redo actions (Ctrl-Z works)
-- **Signals/groups/resources** *(implemented)*: `get_signals`, `connect_signal`,
-  `disconnect_signal` wire node signals to methods (persistent connections that
-  serialize into the `.tscn`); `get_node_groups`, `set_node_groups`,
-  `find_nodes_in_group` manage persistent group membership across the edited scene;
-  `add_resource` instantiates a `Resource` subtype and assigns it to a node property;
-  `set_anchor_preset` applies a `Control` layout preset; `attach_script` attaches an
-  existing `.gd` to a node — all mutating tools are undoable
-- **Editor** *(implemented)*: `get_output_log` and `get_editor_errors` read engine
-  log/error output captured by a ring-buffer `Logger` the plugin installs via
-  `OS.add_logger` (Godot exposes no public API to *read* the editor's Output dock,
-  so capturing our own stream is the only robust path); `clear_output` clears **the
-  MCP capture buffer, not the editor's Output dock**; `get_editor_screenshot` captures
-  the editor window (PNG to a `res://` path or base64) and **requires a windowed,
-  non-headless editor** — in `--headless` it returns a clean error; `reload_project`
-  triggers an editor filesystem rescan. Note: `reload_plugin` (godot-mcp-pro parity) is
-  intentionally **deferred** — a plugin disabling/reloading itself would tear down the
-  HTTP server and `_process` loop servicing the very request, so it can't safely respond.
-- **Input map** *(implemented)*: `get_input_actions` and `set_input_action` read
-  and write the project input map (the `input/*` entries in `ProjectSettings`,
-  each an `{deadzone, events}` action). They operate on the project definition and
-  work **fully headlessly** (no running game needed), and are distinct from the
-  deferred running-game input-*injection* tools (v2 runtime). `set_input_action`
-  supports partial updates (omit `events`/`deadzone` to keep existing values);
-  `events` are Godot `var_to_str` `InputEvent` strings, and non-`InputEvent`
-  entries are skipped and reported in an `errors` list.
-- **Runtime (headless scenario runner)** *(implemented)*: `addons/godot_mcp/runtime/run_scenario.sh`
-  launches a separate `--headless` Godot process that runs a real scene, drives it with
-  input-map actions, manipulates/inspects live nodes, and writes a pass/fail results JSON
-  (no editor, no HTTP server in the game). Step types: `wait_frames`/`wait_seconds`,
-  `input_action`, `set_property`, `create_node`/`delete_node`, `call_method`, `watch_signal`,
-  and `assert`. Action input is poll-observable only; raw key/mouse `InputEvent` synthesis,
-  `_input` delivery, and screenshots remain deferred.
+| Tool | What it does |
+|------|--------------|
+| `read_file` | Read any file in the project. |
+| `list_dir` | List the contents of a directory. |
+| `search_project` | Full-text search across the whole project. |
+| `create_script` | Create a new `.gd` script. |
+| `edit_script` | Overwrite a whole file, or do a targeted find/replace (`find` / `replace` / `replace_all`). |
+| `validate_script` | Compile-check a script and report errors before you run anything. |
+| `list_scripts` | Recursively list every `.gd` file with its `class_name` and `extends`. |
+| `get_open_scripts` | See which scripts are open in the editor (and the active one). |
 
-Deferred to v2: in-game **runtime** tools (screenshot, input injection, live
-node query) — they need a second live connection from the running game.
-Near-full tool parity (signals, resources, project settings, input maps, asset
-generation, visualizers) is also a later expansion.
+### 🗂️ Project
+
+Inspect project configuration and metadata.
+
+| Tool | What it does |
+|------|--------------|
+| `get_project_info` | High-level info about the project. |
+| `get_project_settings` | Read entries from Project Settings. |
+| `list_project_resources` | List the resources in the project. |
+| `get_uid` | Look up the stable `uid://` for a resource path. |
+| `update_project_uids` | Refresh the project's UID cache. |
+
+### 🌳 Scenes
+
+Build and rearrange the currently-open scene. **Every change here is registered
+as an editor undo/redo step, so `Ctrl+Z` works exactly as you'd expect.**
+
+| Tool | What it does |
+|------|--------------|
+| `get_scene_tree` | Read the node hierarchy of the open scene. |
+| `get_node_properties` | Inspect a node's properties. |
+| `create_node` | Add a node (optionally with starting `properties`). |
+| `modify_node` | Change a node's properties. |
+| `delete_node` | Remove a node. |
+| `duplicate_node` | Duplicate a node. |
+| `move_node` | Reparent or reorder a node. |
+| `rename_node` | Rename a node. |
+| `create_scene` | Create a new scene. |
+| `save_scene` | Save the current scene to disk. |
+
+### 🔌 Signals, groups & resources
+
+Wire nodes together and configure them — all changes persist into the `.tscn`
+and are undoable.
+
+| Tool | What it does |
+|------|--------------|
+| `get_signals` | List a node's available signals. |
+| `connect_signal` | Connect a signal to a method (persists into the scene file). |
+| `disconnect_signal` | Remove a signal connection. |
+| `get_node_groups` | List the groups a node belongs to. |
+| `set_node_groups` | Set a node's group membership. |
+| `find_nodes_in_group` | Find every node in a given group. |
+| `add_resource` | Instantiate a `Resource` subtype and assign it to a node property. |
+| `set_anchor_preset` | Apply a `Control` layout/anchor preset. |
+| `attach_script` | Attach an existing `.gd` file to a node. |
+
+### 🖥️ Editor feedback
+
+Close the loop: see what the engine is saying.
+
+| Tool | What it does |
+|------|--------------|
+| `get_output_log` | Read captured engine log output. |
+| `get_editor_errors` | Read captured editor errors. |
+| `clear_output` | Clear the MCP capture buffer (not the editor's Output dock). |
+| `get_editor_screenshot` | Capture the editor window as a PNG file or base64. *Requires a windowed (non-headless) editor.* |
+| `reload_project` | Trigger an editor filesystem rescan. |
+
+### 🎮 Input map
+
+Read and edit the project's input actions — works fully headlessly, no running
+game needed.
+
+| Tool | What it does |
+|------|--------------|
+| `get_input_actions` | Read the project's input map. |
+| `set_input_action` | Add or update an input action (supports partial updates). |
+
+### 📚 Read-only resources
+
+In addition to tools, the server publishes live MCP resources your agent can
+read directly:
+
+- `godot://project/info` — project information
+- `godot://scene/current` — the currently-open scene
+- `godot://script/current` — the currently-open script
+
+---
+
+## Testing your game: the headless scenario runner
+
+Beyond editing, Godot MCP ships a **headless scenario runner** that actually
+*runs* your game and checks that it behaves. It launches a separate
+`--headless` Godot process, loads a real scene, drives it with input-map
+actions, manipulates and inspects live runtime nodes, and writes a pass/fail
+results JSON.
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/move_right.json /tmp/out.json
+```
+
+A scenario is a JSON list of steps. Available step types:
+
+- `wait_frames` / `wait_seconds` — let the game tick
+- `input_action` — press/release an input-map action
+- `set_property` — change a live node's property
+- `create_node` / `delete_node` — manipulate the running tree
+- `call_method` — call a method on a node
+- `watch_signal` — record signal emissions
+- `assert` — check a condition and pass/fail the run
+
+This runs separately from the editor (it's launched via the shell, not over
+MCP), so you can use it in CI. *Note: input is currently poll-observable only —
+raw key/mouse `InputEvent` synthesis, `_input` delivery, and in-game screenshots
+are planned for a future version.*
+
+---
+
+## Why it's built this way
+
+Most Godot MCP servers require a Node.js runtime and run as a separate process
+that bridges your AI client to the editor. Godot MCP deliberately avoids both:
+
+- **Zero non-Godot dependencies.** No Node, no npm, no compiled binary, no
+  per-platform distribution problem. Ship one addon, `git clone`, enable, done.
+- **Many agents, one editor.** Traditional stdio MCP servers are *spawned per
+  client*, so each AI instance fights to own the connection. Godot MCP hosts a
+  single HTTP server that every instance simply connects to — so multiple Claude
+  Code sessions can drive the same editor at once.
+
+```
+  Claude Code #1 ─┐
+  Claude Code #2 ─┼──HTTP──▶  Godot editor plugin  ──▶  in-process tools
+  Claude Code #3 ─┘          (TCPServer @127.0.0.1:8765)   (scene/script/...)
+```
+
+**Why pure GDScript instead of Rust or Python?** Every Godot editor API is
+main-thread only, so tool execution serializes on the editor's thread no matter
+what language the bridge is written in. A separate daemon's only job would be
+translating MCP ⇄ Godot — pure overhead. Hosting MCP directly inside the editor
+deletes the daemon, the cross-process protocol, and the distribution headache in
+one move. The one cost (GDScript has no built-in HTTP server) is small: MCP's
+Streamable HTTP transport allows plain `POST → application/json` responses, so
+the plugin only needs basic HTTP/1.1 parsing and JSON-RPC.
+
+---
+
+## Things to know
+
+- **The editor must be open.** The editor *is* the server — there's no headless
+  per-operation spawning for the MCP tools (the scenario runner is the
+  exception, and it spawns its own process on purpose).
+- **One editor = one server on one port** (default `8765`, override via the
+  `godot_mcp/port` project setting). Two projects open → two editors → two
+  ports.
+- **Loopback only, no auth in v1.** The server binds to `127.0.0.1`. An optional
+  bearer token is planned. Don't expose the port to untrusted networks.
+- **Coming later:** in-game runtime tools (live screenshot, input injection, and
+  node queries against a *running* game) need a second live connection from the
+  game and are planned for v2.
+
+---
+
+## Contributing & development
+
+Working on the plugin itself? See [`CLAUDE.md`](CLAUDE.md) for the architecture,
+request flow, and conventions, and [`docs/E2E_TESTING.md`](docs/E2E_TESTING.md)
+for live-server testing. The headless unit suite runs with:
+
+```bash
+./addons/godot_mcp/run_tests.sh
+```
+
+## License
+
+See [`LICENSE`](LICENSE).

@@ -9,6 +9,7 @@ const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
 const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
 const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
 const InputTools = preload("res://addons/godot_mcp/tools/input_tools.gd")
+const UidTools = preload("res://addons/godot_mcp/tools/uid_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
 const PROTOCOL_VERSION := "2025-06-18"
@@ -185,6 +186,13 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("set_input_action", "Create/update an input map action (partial update). Args: {name, events? (Array of var_to_str InputEvent strings), deadzone?}.",
 		{"type": "object", "properties": {"name": {"type": "string"}, "events": {"type": "array", "items": {"type": "string"}}, "deadzone": {"type": "number"}}, "required": ["name"]},
 		Callable(input, "set_input_action"))
+	var uids = UidTools.new()
+	reg.register("get_uid", "Get the UID of a resource file. Args: {path}.",
+		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+		Callable(uids, "get_uid"))
+	reg.register("update_project_uids", "Resave .tscn/.tres/.res files to regenerate UID sidecars. Args: {path?} (default res://).",
+		{"type": "object", "properties": {"path": {"type": "string"}}},
+		Callable(uids, "update_project_uids"))
 	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.
@@ -192,6 +200,7 @@ func _build_default_registry(project = null, scene = null):
 	reg.set_meta("_scripts", scripts)
 	reg.set_meta("_editor", editor)
 	reg.set_meta("_input", input)
+	reg.set_meta("_uids", uids)
 	return reg
 
 func _build_default_resource_registry(project = null, scene = null):

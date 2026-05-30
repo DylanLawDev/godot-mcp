@@ -84,9 +84,15 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("create_script", "Create a new .gd script (makes parent dirs). Args: {path, content}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
 		Callable(scripts, "create_script"))
-	reg.register("edit_script", "Overwrite an existing script's contents. Args: {path, content}.",
-		{"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
+	reg.register("edit_script", "Edit an existing script. Either overwrite with {content}, or find/replace with {find, replace?, replace_all?}. Args: {path, content?, find?, replace?, replace_all?}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}, "find": {"type": "string"}, "replace": {"type": "string"}, "replace_all": {"type": "boolean"}}, "required": ["path"]},
 		Callable(scripts, "edit_script"))
+	reg.register("list_scripts", "Recursively list .gd scripts under a path with their class_name/extends. Args: {path?} (default res://).",
+		{"type": "object", "properties": {"path": {"type": "string"}}},
+		Callable(scripts, "list_scripts"))
+	reg.register("get_open_scripts", "List scripts open in the editor and the current one (empty headlessly). No args.",
+		{"type": "object", "properties": {}},
+		Callable(scripts, "get_open_scripts"))
 	reg.register("validate_script", "Validate GDScript syntax. Args: {content} or {path}.",
 		{"type": "object", "properties": {"content": {"type": "string"}, "path": {"type": "string"}}},
 		Callable(scripts, "validate_script"))

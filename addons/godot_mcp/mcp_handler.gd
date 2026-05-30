@@ -127,6 +127,33 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("rename_node", "Rename a node. Args: {path, name}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}}, "required": ["path", "name"]},
 		Callable(scene, "rename_node"))
+	reg.register("get_signals", "List a node's signals and their current connections. Args: {path}.",
+		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "get_signals"))
+	reg.register("connect_signal", "Connect a node signal to a method on another node (persistent by default). Args: {from_path, signal, to_path, method, flags?}.",
+		{"type": "object", "properties": {"from_path": {"type": "string"}, "signal": {"type": "string"}, "to_path": {"type": "string"}, "method": {"type": "string"}, "flags": {"type": "integer"}}, "required": ["from_path", "signal", "to_path", "method"]},
+		Callable(scene, "connect_signal"))
+	reg.register("disconnect_signal", "Disconnect a node signal from a method on another node. Args: {from_path, signal, to_path, method}.",
+		{"type": "object", "properties": {"from_path": {"type": "string"}, "signal": {"type": "string"}, "to_path": {"type": "string"}, "method": {"type": "string"}}, "required": ["from_path", "signal", "to_path", "method"]},
+		Callable(scene, "disconnect_signal"))
+	reg.register("get_node_groups", "Get the groups a node belongs to. Args: {path}.",
+		{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "get_node_groups"))
+	reg.register("set_node_groups", "Set a node's groups (persistent), diffing against current membership. Args: {path, groups}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "groups": {"type": "array", "items": {"type": "string"}}}, "required": ["path", "groups"]},
+		Callable(scene, "set_node_groups"))
+	reg.register("find_nodes_in_group", "Find paths of nodes in a group within the edited scene. Args: {group}.",
+		{"type": "object", "properties": {"group": {"type": "string"}}, "required": ["group"]},
+		Callable(scene, "find_nodes_in_group"))
+	reg.register("add_resource", "Instantiate a Resource and assign it to a node property. Args: {path, property, type, sub_properties?} (sub_properties values are Godot var_to_str strings).",
+		{"type": "object", "properties": {"path": {"type": "string"}, "property": {"type": "string"}, "type": {"type": "string"}, "sub_properties": {"type": "object"}}, "required": ["path", "property", "type"]},
+		Callable(scene, "add_resource"))
+	reg.register("set_anchor_preset", "Apply a Control anchor preset. Args: {path, preset (int or name like 'full_rect'), keep_offsets?}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "preset": {"type": ["integer", "string"]}, "keep_offsets": {"type": "boolean"}}, "required": ["path", "preset"]},
+		Callable(scene, "set_anchor_preset"))
+	reg.register("attach_script", "Attach an existing .gd script to a node. Args: {path, script_path}.",
+		{"type": "object", "properties": {"path": {"type": "string"}, "script_path": {"type": "string"}}, "required": ["path", "script_path"]},
+		Callable(scene, "attach_script"))
 	reg.set_meta("_scene", scene)
 	reg.set_meta("_project", project)
 	# Keep tool instances alive for the lifetime of the registry by stashing them.

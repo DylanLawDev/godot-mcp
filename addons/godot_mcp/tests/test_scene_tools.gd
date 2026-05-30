@@ -37,6 +37,42 @@ func test_rename_node_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.rename_node({"path": "Foo", "name": "Bar"})["ok"])
 
+func test_get_signals_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.get_signals({"path": "."})["ok"])
+
+func test_connect_signal_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.connect_signal({"from_path": "A", "signal": "renamed", "to_path": "B", "method": "queue_free"})["ok"])
+
+func test_disconnect_signal_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.disconnect_signal({"from_path": "A", "signal": "renamed", "to_path": "B", "method": "queue_free"})["ok"])
+
+func test_get_node_groups_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.get_node_groups({"path": "."})["ok"])
+
+func test_set_node_groups_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.set_node_groups({"path": ".", "groups": []})["ok"])
+
+func test_find_nodes_in_group_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.find_nodes_in_group({"group": "enemies"})["ok"])
+
+func test_add_resource_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.add_resource({"path": ".", "property": "shape", "type": "RectangleShape2D"})["ok"])
+
+func test_set_anchor_preset_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.set_anchor_preset({"path": ".", "preset": 15})["ok"])
+
+func test_attach_script_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.attach_script({"path": ".", "script_path": "res://examples/scripts/player.gd"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -256,6 +292,166 @@ func test_move_into_own_descendant_guard() -> void:
 	var branch := st._resolve(root, "Branch")
 	var leaf := st._resolve(root, "Branch/Leaf")
 	assert_true(branch.is_ancestor_of(leaf))
+	root.free()
+
+# Task 2.1: _encode_signals reports a connection's target path + method, with the
+# target path expressed relative to the scene root.
+func test_encode_signals_reports_connection() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")  # Node2D, has "ready" signal
+	var leaf := st._resolve(root, "Branch/Leaf")
+	# Connect Child.renamed -> Leaf.queue_free (queue_free exists on every Node).
+	child.connect("renamed", Callable(leaf, "queue_free"))
+	var sigs: Array = st._encode_signals(child, root)
+	var found := {}
+	for s in sigs:
+		for c in s["connections"]:
+			found[str(s["name"]) + "->" + str(c["method"])] = c["target_path"]
+	assert_true(found.has("renamed->queue_free"))
+	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
+	root.free()
+
+# Task 2.3: _connection_flags recovers a connection's original ConnectFlags so a
+# disconnect's undo restores it exactly (not a hardcoded CONNECT_PERSIST).
+func test_connection_flags_recovers_original() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var cb := Callable(leaf, "queue_free")
+	var flags := Object.CONNECT_PERSIST | Object.CONNECT_ONE_SHOT
+	child.connect("renamed", cb, flags)
+	assert_eq(st._connection_flags(child, "renamed", cb), flags)
+	# An absent connection falls back to CONNECT_PERSIST.
+	assert_eq(st._connection_flags(child, "ready", cb), Object.CONNECT_PERSIST)
+	root.free()
+
+# Task 2.6: _load_script validates the path and loads a real Script; rejects
+# traversal, missing files and non-script resources.
+func test_load_script_validates_and_loads() -> void:
+	var st = SceneTools.new()
+	var ok_res: Dictionary = st._load_script("res://examples/scripts/player.gd")
+	assert_true(ok_res["ok"])
+	assert_true(ok_res["value"] is Script)
+	# Traversal rejected by Paths.validate.
+	assert_false(st._load_script("res://../etc/passwd")["ok"])
+	# Missing file rejected.
+	assert_false(st._load_script("res://examples/scripts/nope_missing.gd")["ok"])
+	# A non-script resource is not a Script.
+	assert_false(st._load_script("res://examples/data/notes.txt")["ok"])
+
+# Task 2.5: _resolve_preset maps int passthrough + name variants to LayoutPreset ints.
+func test_resolve_preset_name_and_int() -> void:
+	var st = SceneTools.new()
+	assert_eq(st._resolve_preset(15), 15)
+	assert_eq(st._resolve_preset("PRESET_FULL_RECT"), 15)
+	assert_eq(st._resolve_preset("full_rect"), 15)
+	assert_eq(st._resolve_preset("center"), 8)
+	assert_eq(st._resolve_preset("CENTER"), 8)
+	assert_eq(st._resolve_preset("not_a_preset"), -1)
+
+# Task 2.4: _make_resource validates the type is an instantiable Resource subclass.
+func test_make_resource_validates_type() -> void:
+	var st = SceneTools.new()
+	var ok_res: Dictionary = st._make_resource("RectangleShape2D")
+	assert_true(ok_res["ok"])
+	assert_true(ok_res["value"] is Resource)
+	# A Node is not a Resource; a bogus class does not exist.
+	assert_false(st._make_resource("Node2D")["ok"])
+	assert_false(st._make_resource("NotARealClass")["ok"])
+
+# Task 2.4: a built resource assigns onto a real Resource property of a node.
+func test_make_resource_assigns_onto_node_property() -> void:
+	var st = SceneTools.new()
+	var node := CollisionShape2D.new()
+	var res: Resource = st._make_resource("RectangleShape2D")["value"]
+	node.set("shape", res)
+	assert_eq(node.shape, res)
+	node.free()
+
+# Task 2.3: _find_in_group walks a detached subtree and returns the root-relative
+# paths of exactly the nodes that are in the group.
+func test_find_in_group_collects_matching_paths() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	st._resolve(root, "Child").add_to_group("enemies", true)
+	st._resolve(root, "Branch/Leaf").add_to_group("enemies", true)
+	st._resolve(root, "Branch").add_to_group("walls", true)
+	var out := []
+	st._find_in_group(root, root, "enemies", out)
+	assert_eq(out.size(), 2)
+	assert_has(out, "Child")
+	assert_has(out, "Branch/Leaf")
+	root.free()
+
+# Task 2.3: _group_diff computes which groups to add vs remove given current/desired.
+func test_group_diff_added_and_removed() -> void:
+	var st = SceneTools.new()
+	var d: Dictionary = st._group_diff(["a", "b"], ["b", "c"])
+	assert_eq(d["added"], ["c"])
+	assert_eq(d["removed"], ["a"])
+
+# Review fix (PR #6): internal "_"-prefixed groups are reserved by Godot and must
+# never be removed by set_node_groups, even when absent from the desired list.
+func test_group_diff_preserves_internal_groups() -> void:
+	var st = SceneTools.new()
+	var d: Dictionary = st._group_diff(["_edit_lock_", "enemies"], ["walls"])
+	assert_has(d["added"], "walls")
+	assert_has(d["removed"], "enemies")
+	assert_false(d["removed"].has("_edit_lock_"))
+
+# Review fix (PR #6): _find_connection returns the real (possibly bound) callable so a
+# connection made with bound args can still be located and disconnected.
+func test_find_connection_matches_bound_callable() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var bound := Callable(leaf, "set_process").bind(true)
+	child.connect("renamed", bound)
+	var found := st._find_connection(child, "renamed", leaf, "set_process")
+	assert_false(found.is_null())
+	# It recovered the ACTUAL bound callable (carries its bind), which is what
+	# disconnect() requires — a freshly built Callable(target, method) has no binds
+	# and disconnect would reject it.
+	assert_eq(found.get_bound_arguments_count(), 1)
+	child.disconnect("renamed", found)
+	assert_false(child.is_connected("renamed", found))
+	# No matching connection yields an empty Callable.
+	assert_true(st._find_connection(child, "ready", leaf, "set_process").is_null())
+	root.free()
+
+# Review fix (PR #6): attach_script must reject scripts whose native base is
+# incompatible with the target node.
+func test_script_compatible_checks_base_type() -> void:
+	var st = SceneTools.new()
+	assert_true(st._script_compatible("Sprite2D", "Node2D"))   # subclass of base
+	assert_true(st._script_compatible("Node2D", "Node2D"))      # exact base
+	assert_false(st._script_compatible("Control", "Node2D"))    # unrelated branch
+	assert_true(st._script_compatible("Control", ""))           # no declared base
+
+# Review fix (PR #6): add_resource must reject a resource the property can't accept.
+func test_resource_assignable_respects_property_class() -> void:
+	var st = SceneTools.new()
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Shape2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "Texture2D"))
+	assert_false(st._resource_assignable("RectangleShape2D", TYPE_INT, ""))   # not an object prop
+	assert_true(st._resource_assignable("RectangleShape2D", TYPE_OBJECT, "")) # untyped object prop
+
+# Task 2.2: connecting then disconnecting a signal flips is_connected, using the
+# same Godot primitives the live-editor do/undo branches invoke.
+func test_connect_disconnect_primitives() -> void:
+	var st = SceneTools.new()
+	var root := _make_tree()
+	var child := st._resolve(root, "Child")
+	var leaf := st._resolve(root, "Branch/Leaf")
+	var cb := Callable(leaf, "queue_free")
+	assert_false(child.is_connected("renamed", cb))
+	child.connect("renamed", cb, Object.CONNECT_PERSIST)
+	assert_true(child.is_connected("renamed", cb))
+	child.disconnect("renamed", cb)
+	assert_false(child.is_connected("renamed", cb))
 	root.free()
 
 # Task 1.4: renaming sets the node name (we read it back since Godot may de-dup).

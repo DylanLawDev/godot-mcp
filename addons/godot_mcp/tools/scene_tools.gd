@@ -2,6 +2,7 @@
 extends RefCounted
 
 const _NO_SCENE := "No scene is currently open"
+const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 
 # --- Public tools ---
 
@@ -219,7 +220,384 @@ func rename_node(args: Dictionary) -> Dictionary:
 	# Godot may de-duplicate names, so report the actual resulting name.
 	return {"ok": true, "value": {"path": str(root.get_path_to(node)), "name": str(node.name)}}
 
+func get_signals(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	return {"ok": true, "value": {"path": path, "signals": _encode_signals(node, root)}}
+
+func connect_signal(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var from_path := str(args.get("from_path", ""))
+	var source := _resolve(root, from_path)
+	if source == null:
+		return {"ok": false, "error": "Node not found: " + from_path}
+	var to_path := str(args.get("to_path", ""))
+	var target := _resolve(root, to_path)
+	if target == null:
+		return {"ok": false, "error": "Node not found: " + to_path}
+	var sig := str(args.get("signal", ""))
+	if not source.has_signal(sig):
+		return {"ok": false, "error": "No such signal: " + sig}
+	var method := str(args.get("method", ""))
+	if not target.has_method(method):
+		return {"ok": false, "error": "No such method: " + method}
+	var flags := int(args.get("flags", Object.CONNECT_PERSIST))
+	var cb := Callable(target, method)
+	if source.is_connected(sig, cb):
+		return {"ok": false, "error": "Signal already connected: " + sig + " -> " + to_path + "." + method}
+	var ur = _undo_redo()
+	if ur == null:
+		source.connect(sig, cb, flags)
+	else:
+		ur.create_action("MCP: connect signal")
+		ur.add_do_method(source, "connect", sig, cb, flags)
+		ur.add_undo_method(source, "disconnect", sig, cb)
+		ur.commit_action()
+	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method, "flags": flags}}
+
+func disconnect_signal(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var from_path := str(args.get("from_path", ""))
+	var source := _resolve(root, from_path)
+	if source == null:
+		return {"ok": false, "error": "Node not found: " + from_path}
+	var to_path := str(args.get("to_path", ""))
+	var target := _resolve(root, to_path)
+	if target == null:
+		return {"ok": false, "error": "Node not found: " + to_path}
+	var sig := str(args.get("signal", ""))
+	var method := str(args.get("method", ""))
+	# Use the connection's ACTUAL callable (which may carry bound args) rather than a
+	# freshly-built Callable(target, method); otherwise a bound connection reported by
+	# get_signals can't be matched and we'd wrongly claim it isn't connected.
+	var cb := _find_connection(source, sig, target, method)
+	if cb.is_null() or not source.is_connected(sig, cb):
+		return {"ok": false, "error": "Signal not connected: " + sig + " -> " + to_path + "." + method}
+	# Capture the original flags so undo restores the connection exactly (not just CONNECT_PERSIST).
+	var orig_flags := _connection_flags(source, sig, cb)
+	var ur = _undo_redo()
+	if ur == null:
+		source.disconnect(sig, cb)
+	else:
+		ur.create_action("MCP: disconnect signal")
+		ur.add_do_method(source, "disconnect", sig, cb)
+		ur.add_undo_method(source, "connect", sig, cb, orig_flags)
+		ur.commit_action()
+	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
+
+func attach_script(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var script_path := str(args.get("script_path", ""))
+	var loaded := _load_script(script_path)
+	if not loaded["ok"]:
+		return {"ok": false, "error": loaded["error"]}
+	var scr = loaded["value"]
+	# set_script silently no-ops when the script's native base type is incompatible with
+	# the node (e.g. a Node2D script on a Control), so validate up front rather than
+	# reporting a success that left the node's script unchanged.
+	var base := str(scr.get_instance_base_type())
+	if not _script_compatible(node.get_class(), base):
+		return {"ok": false, "error": "Script extends " + base + ", incompatible with node type " + node.get_class()}
+	var old = node.get_script()
+	var ur = _undo_redo()
+	if ur == null:
+		node.set_script(scr)
+	else:
+		ur.create_action("MCP: attach script")
+		ur.add_do_method(node, "set_script", scr)
+		ur.add_undo_method(node, "set_script", old)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "script_path": loaded["path"]}}
+
+func set_anchor_preset(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	if not (node is Control):
+		return {"ok": false, "error": "Node is not a Control: " + path}
+	var preset := _resolve_preset(args.get("preset"))
+	if preset == -1:
+		return {"ok": false, "error": "Unknown anchor preset: " + str(args.get("preset"))}
+	var keep := bool(args.get("keep_offsets", false))
+	var ctrl: Control = node
+	var old := {
+		"anchor_left": ctrl.anchor_left, "anchor_top": ctrl.anchor_top,
+		"anchor_right": ctrl.anchor_right, "anchor_bottom": ctrl.anchor_bottom,
+		"offset_left": ctrl.offset_left, "offset_top": ctrl.offset_top,
+		"offset_right": ctrl.offset_right, "offset_bottom": ctrl.offset_bottom,
+	}
+	var ur = _undo_redo()
+	if ur == null:
+		ctrl.set_anchors_preset(preset, keep)
+	else:
+		ur.create_action("MCP: set anchor preset")
+		ur.add_do_method(ctrl, "set_anchors_preset", preset, keep)
+		for prop in old.keys():
+			ur.add_undo_property(ctrl, prop, old[prop])
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "preset": preset}}
+
+func add_resource(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var type := str(args.get("type", ""))
+	var made := _make_resource(type)
+	if not made["ok"]:
+		return {"ok": false, "error": made["error"]}
+	var property := str(args.get("property", ""))
+	var known := {}
+	var prop_type := TYPE_NIL
+	var prop_class := ""
+	for p in node.get_property_list():
+		known[p["name"]] = true
+		if p["name"] == property:
+			prop_type = p["type"]
+			prop_class = str(p.get("class_name", ""))
+	if not known.has(property):
+		return {"ok": false, "error": "No such property: " + property}
+	# The property must accept the created resource, otherwise set() silently no-ops and
+	# we'd report a modification that never happened. Validate against the declared class.
+	if not _resource_assignable(type, prop_type, prop_class):
+		return {"ok": false, "error": "Resource type " + type + " is not assignable to property '" + property + "' (expects " + (prop_class if prop_class != "" else "non-object") + ")"}
+	var res: Resource = made["value"]
+	var sub_set := []
+	var sub_errors := []
+	var sub = args.get("sub_properties", {})
+	if typeof(sub) == TYPE_DICTIONARY and not sub.is_empty():
+		var res_known := {}
+		for p in res.get_property_list():
+			res_known[p["name"]] = true
+		for name in sub.keys():
+			if res_known.has(name):
+				res.set(name, str_to_var(str(sub[name])))
+				sub_set.append(name)
+			else:
+				sub_errors.append({"name": name, "error": "No such property"})
+	var old = node.get(property)
+	var ur = _undo_redo()
+	if ur == null:
+		node.set(property, res)
+	else:
+		ur.create_action("MCP: add resource")
+		ur.add_do_property(node, property, res)
+		ur.add_undo_property(node, property, old)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "property": property, "type": type, "sub_set": sub_set, "sub_errors": sub_errors}}
+
+func get_node_groups(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	return {"ok": true, "value": {"path": path, "groups": _groups_as_strings(node)}}
+
+func set_node_groups(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var groups_arg = args.get("groups", null)
+	if typeof(groups_arg) != TYPE_ARRAY:
+		return {"ok": false, "error": "'groups' must be an array"}
+	var desired := []
+	for g in groups_arg:
+		desired.append(str(g))
+	var current := _groups_as_strings(node)
+	var ur = _undo_redo()
+	if ur == null:
+		_set_groups(node, desired)
+	else:
+		ur.create_action("MCP: set node groups")
+		ur.add_do_method(self, "_set_groups", node, desired)
+		ur.add_undo_method(self, "_set_groups", node, current)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "groups": _groups_as_strings(node)}}
+
+func find_nodes_in_group(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var group := str(args.get("group", ""))
+	var out := []
+	_find_in_group(root, root, group, out)
+	return {"ok": true, "value": {"paths": out}}
+
 # --- Pure helpers ---
+
+# Validate `script_path`, ensure it exists and loads as a Script.
+# Returns {ok, value: Script, path} or {ok:false, error}.
+func _load_script(script_path: String) -> Dictionary:
+	var v := Paths.validate(script_path)
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var p: String = v["path"]
+	if not FileAccess.file_exists(p):
+		return {"ok": false, "error": "Script not found: " + script_path}
+	var scr = load(p)
+	if scr == null or not (scr is Script):
+		return {"ok": false, "error": "Not a script: " + script_path}
+	return {"ok": true, "value": scr, "path": p}
+
+# Map a preset value (int passthrough, or a name like "PRESET_FULL_RECT" /
+# "full_rect" / "FULL_RECT") to a LayoutPreset int. Returns -1 if unknown.
+func _resolve_preset(value) -> int:
+	if typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT:
+		var i := int(value)
+		if i >= 0 and i <= 15:
+			return i
+		return -1
+	var key := str(value).strip_edges().to_upper()
+	if key.begins_with("PRESET_"):
+		key = key.substr("PRESET_".length())
+	var table := {
+		"TOP_LEFT": 0, "TOP_RIGHT": 1, "BOTTOM_LEFT": 2, "BOTTOM_RIGHT": 3,
+		"CENTER_LEFT": 4, "CENTER_TOP": 5, "CENTER_RIGHT": 6, "CENTER_BOTTOM": 7,
+		"CENTER": 8, "LEFT_WIDE": 9, "TOP_WIDE": 10, "RIGHT_WIDE": 11,
+		"BOTTOM_WIDE": 12, "VCENTER_WIDE": 13, "HCENTER_WIDE": 14, "FULL_RECT": 15,
+	}
+	return table.get(key, -1)
+
+# Instantiate `type` as a Resource. Returns {ok, value: Resource} or {ok:false, error}.
+func _make_resource(type: String) -> Dictionary:
+	if not ClassDB.class_exists(type) or not ClassDB.is_parent_class(type, "Resource"):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	if not ClassDB.can_instantiate(type):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	var inst = ClassDB.instantiate(type)
+	if not (inst is Resource):
+		return {"ok": false, "error": "Invalid resource type: " + type}
+	return {"ok": true, "value": inst}
+
+# A node's groups as plain Strings (get_groups returns StringNames).
+func _groups_as_strings(node: Node) -> Array:
+	var out := []
+	for g in node.get_groups():
+		out.append(str(g))
+	return out
+
+# Replace `node`'s group membership with exactly `desired`, persistently. Removes
+# any group not in `desired` and adds (persistently) any that is missing.
+func _set_groups(node: Node, desired: Array) -> void:
+	var diff := _group_diff(_groups_as_strings(node), desired)
+	for g in diff["removed"]:
+		node.remove_from_group(g)
+	for g in diff["added"]:
+		node.add_to_group(g, true)
+
+# Compute {added, removed} string arrays moving from `current` to `desired`. Groups
+# whose name begins with "_" are engine/editor-internal (Godot reserves that prefix)
+# and are never removed, so set_node_groups can't silently clear editor metadata.
+func _group_diff(current: Array, desired: Array) -> Dictionary:
+	var added := []
+	var removed := []
+	for g in desired:
+		if not current.has(g):
+			added.append(g)
+	for g in current:
+		if not desired.has(g) and not str(g).begins_with("_"):
+			removed.append(g)
+	return {"added": added, "removed": removed}
+
+# Walk `node`'s subtree, appending root-relative paths of nodes in `group` to `out`.
+func _find_in_group(node: Node, root: Node, group: String, out: Array) -> void:
+	if node.is_in_group(group):
+		out.append(str(root.get_path_to(node)))
+	for c in node.get_children():
+		_find_in_group(c, root, group, out)
+
+# Encode `node`'s signals with their current connections. A connection target that
+# is the root or a descendant of root is reported as a root-relative path; anything
+# else (an outside object) is reported by its class name.
+func _encode_signals(node: Node, root: Node) -> Array:
+	var out := []
+	for sig in node.get_signal_list():
+		var name: String = sig["name"]
+		var conns := []
+		for c in node.get_signal_connection_list(name):
+			var callable: Callable = c["callable"]
+			var target = callable.get_object()
+			var target_path: String
+			if target is Node and (target == root or root.is_ancestor_of(target)):
+				target_path = str(root.get_path_to(target))
+			elif target != null:
+				target_path = (target as Object).get_class()
+			else:
+				target_path = ""
+			conns.append({
+				"target_path": target_path,
+				"method": str(callable.get_method()),
+				"flags": int(c["flags"]),
+			})
+		out.append({"name": name, "args": sig["args"], "connections": conns})
+	return out
+
+# The ConnectFlags of an existing `signal -> callable` connection on `source`,
+# defaulting to CONNECT_PERSIST if no matching connection is found.
+func _connection_flags(source: Object, signal_name: String, cb: Callable) -> int:
+	for c in source.get_signal_connection_list(signal_name):
+		if (c["callable"] as Callable) == cb:
+			return int(c["flags"])
+	return Object.CONNECT_PERSIST
+
+# Find an existing `signal_name` connection on `source` whose callable targets `target`
+# with method `method`, returning the ACTUAL (possibly bound) Callable. Returns an empty
+# Callable when none matches. Matching on object+method lets us disconnect connections
+# that carry bound arguments, which a freshly built Callable(target, method) would miss.
+func _find_connection(source: Object, signal_name: String, target: Object, method: String) -> Callable:
+	if not source.has_signal(signal_name):
+		return Callable()
+	for c in source.get_signal_connection_list(signal_name):
+		var cb: Callable = c["callable"]
+		if cb.get_object() == target and str(cb.get_method()) == method:
+			return cb
+	return Callable()
+
+# Pure: can a script whose native base type is `base` attach to a node of `node_class`?
+# The node must be that base type or a subclass of it.
+func _script_compatible(node_class: String, base: String) -> bool:
+	if base == "":
+		return true
+	return ClassDB.is_parent_class(node_class, base)
+
+# Pure: is a resource of class `res_type` assignable to a property described by
+# `(prop_type, prop_class)` from get_property_list? Object properties that declare a
+# class only accept that class or a subclass; non-object properties accept nothing.
+func _resource_assignable(res_type: String, prop_type: int, prop_class: String) -> bool:
+	if prop_type != TYPE_OBJECT:
+		return false
+	if prop_class == "":
+		return true
+	return ClassDB.is_parent_class(res_type, prop_class)
 
 # Pure: choose the owner a moved node should keep. Preserve its existing owner when
 # that owner is still a valid ancestor after the move (so the saved scene is unchanged);

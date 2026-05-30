@@ -72,12 +72,16 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (26 tools implemented)
+## v1 scope (28 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
 - **Files/scripts:** `read_file`, `list_dir`, `search_project`, `create_script`,
-  `edit_script`, `validate_script`
+  `edit_script` (whole-file overwrite *or* find/replace via `find`/`replace`/`replace_all`),
+  `validate_script`, `list_scripts` (recursive `.gd` listing with `class_name`/`extends`),
+  `get_open_scripts` (scripts open in the editor + the current one). Note: dedicated
+  `read_script`/`search_in_files` (godot-mcp-pro parity) are intentionally covered by the
+  generic `read_file`/`search_project` rather than added as separate tools.
 - **Project:** `get_project_settings`, `list_project_resources`, `get_project_info`,
   plus MCP resources `godot://project/info`, `godot://scene/current`,
   `godot://script/current`

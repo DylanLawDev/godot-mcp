@@ -37,13 +37,121 @@ func edit_script(args: Dictionary) -> Dictionary:
 	var path: String = v["path"]
 	if not FileAccess.file_exists(path):
 		return {"ok": false, "error": "Script not found: " + path}
+	# file_exists() does not guarantee the file opens (it may be unreadable/locked).
+	var rf := FileAccess.open(path, FileAccess.READ)
+	if rf == null:
+		return {"ok": false, "error": "Failed to open for reading: " + path}
+	var src := rf.get_as_text()
+	rf = null
+	var edited := _apply_edit(src, args)
+	if not edited["ok"]:
+		return {"ok": false, "error": edited["error"]}
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return {"ok": false, "error": "Failed to open for writing: " + path}
-	f.store_string(str(args.get("content", "")))
+	f.store_string(edited["text"])
 	f = null
 	_rescan_filesystem()
 	return {"ok": true, "value": {"path": path}}
+
+# Pure edit logic over `src` given `args`. No filesystem access.
+# Modes: full overwrite ({content}) or find/replace ({find, replace?, replace_all?}).
+# Returns {ok, text, error}.
+func _apply_edit(src: String, args: Dictionary) -> Dictionary:
+	var has_content := args.has("content")
+	var has_find := args.has("find")
+	if has_content and has_find:
+		return {"ok": false, "text": "", "error": "Specify either content or find, not both"}
+	if has_content:
+		return {"ok": true, "text": str(args.get("content", "")), "error": ""}
+	if not has_find:
+		return {"ok": false, "text": "", "error": "Provide content or find"}
+	var find := str(args.get("find", ""))
+	if find == "":
+		return {"ok": false, "text": "", "error": "find must not be empty"}
+	var replace := str(args.get("replace", ""))
+	var count := src.count(find)
+	if count == 0:
+		return {"ok": false, "text": "", "error": "Text not found: " + find}
+	var replace_all := bool(args.get("replace_all", false))
+	if count > 1 and not replace_all:
+		return {"ok": false, "text": "", "error": "Found %d occurrences; pass replace_all to replace all" % count}
+	# count==1 (replace single) or replace_all over all occurrences — both via String.replace.
+	return {"ok": true, "text": src.replace(find, replace), "error": ""}
+
+func list_scripts(args: Dictionary) -> Dictionary:
+	var raw := str(args.get("path", "res://"))
+	if raw == "":
+		raw = "res://"
+	var v := Paths.validate(raw)
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var root: String = v["path"]
+	# Reject a misspelled / non-directory root rather than silently reporting an empty
+	# scan — matches list_dir and list_project_resources, which error on the same case.
+	if DirAccess.open(root) == null:
+		return {"ok": false, "error": "Directory not found: " + root}
+	var out := []
+	_walk_scripts(root, out)
+	return {"ok": true, "value": {"scripts": out}}
+
+# Recursively collect .gd files under `dir`, appending {path, class_name, extends} for each.
+func _walk_scripts(dir: String, out: Array) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name == "." or name == "..":
+			name = d.get_next()
+			continue
+		var full := dir.path_join(name)
+		if d.current_is_dir():
+			# Skip symlinked directories: a link back to an ancestor would recurse
+			# forever, and (unlike list_project_resources) there is no result cap here
+			# to break the cycle.
+			if not d.is_link(full):
+				_walk_scripts(full, out)
+		elif name.ends_with(".gd"):
+			var f := FileAccess.open(full, FileAccess.READ)
+			var header := {"class_name": "", "extends": ""}
+			if f != null:
+				header = _parse_script_header(f.get_as_text())
+			out.append({"path": full, "class_name": header["class_name"], "extends": header["extends"]})
+		name = d.get_next()
+	d.list_dir_end()
+
+# Parse a GDScript source's top-level `class_name X` / `extends Y` via per-line prefix
+# matching (NOT a compile). Returns {class_name, extends}, each "" when absent.
+static func _parse_script_header(text: String) -> Dictionary:
+	var out := {"class_name": "", "extends": ""}
+	for raw in text.split("\n"):
+		# Top-level declarations sit at column 0; matching the un-stripped line
+		# avoids picking up an indented `extends` inside an inner `class X:` body.
+		if raw.begins_with("class_name "):
+			# `class_name Foo extends Bar` is a legal single line — split off the extends.
+			var rest := raw.substr("class_name ".length()).strip_edges()
+			var idx := rest.find(" extends ")
+			if idx != -1:
+				out["extends"] = rest.substr(idx + " extends ".length()).strip_edges()
+				rest = rest.substr(0, idx).strip_edges()
+			out["class_name"] = rest
+		elif raw.begins_with("extends "):
+			out["extends"] = raw.substr("extends ".length()).strip_edges()
+	return out
+
+func get_open_scripts(_args: Dictionary) -> Dictionary:
+	var se = _script_editor()
+	if se == null:
+		return {"ok": true, "value": {"scripts": [], "current": null}}
+	var paths := []
+	for scr in se.get_open_scripts():
+		if scr != null:
+			paths.append(scr.resource_path)
+	var cur = se.get_current_script()
+	var current = cur.resource_path if cur != null else null
+	return {"ok": true, "value": {"scripts": paths, "current": current}}
 
 func validate_script(args: Dictionary) -> Dictionary:
 	var src := str(args.get("content", ""))
@@ -74,6 +182,13 @@ static func _strip_class_name(src: String) -> String:
 		if lines[i].strip_edges().begins_with("class_name "):
 			lines[i] = ""
 	return "\n".join(lines)
+
+# Live seam: the script editor inside a running editor, or null headlessly.
+func _script_editor():
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return null
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	return plugin.get_editor_interface().get_script_editor()
 
 # Only meaningful inside a live editor; the plugin registers itself in Engine metadata (Task 10).
 func _rescan_filesystem() -> void:

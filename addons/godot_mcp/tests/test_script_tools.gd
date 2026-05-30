@@ -99,3 +99,32 @@ func test_validate_script_class_name_with_error_keeps_correct_line() -> void:
 	assert_false(r["value"]["valid"])
 	assert_true(r["value"]["errors"].size() >= 1)
 	assert_true(r["value"]["errors"][0]["line"] >= 3)
+
+# --- list_scripts ---
+
+func test_list_scripts_walks_examples() -> void:
+	var r = ScriptTools.new().list_scripts({"path": "res://examples"})
+	assert_true(r["ok"], str(r))
+	var scripts: Array = r["value"]["scripts"]
+	assert_true(scripts.size() >= 1, str(r))
+	var found_gd := false
+	for s in scripts:
+		assert_true(str(s["path"]).ends_with(".gd"), str(s))
+		if str(s["path"]).ends_with("player.gd"):
+			found_gd = true
+			assert_eq(s["extends"], "CharacterBody2D")
+	assert_true(found_gd, str(scripts))
+
+func test_list_scripts_rejects_traversal() -> void:
+	var r = ScriptTools.new().list_scripts({"path": "../etc"})
+	assert_false(r["ok"], str(r))
+
+func test_parse_script_header_extracts_class_name_and_extends() -> void:
+	var h = ScriptTools._parse_script_header("@tool\nclass_name Foo\nextends Node2D\nfunc _ready():\n\tpass\n")
+	assert_eq(h["class_name"], "Foo")
+	assert_eq(h["extends"], "Node2D")
+
+func test_parse_script_header_empty_when_absent() -> void:
+	var h = ScriptTools._parse_script_header("func _ready():\n\tpass\n")
+	assert_eq(h["class_name"], "")
+	assert_eq(h["extends"], "")

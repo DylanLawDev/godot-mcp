@@ -45,6 +45,53 @@ func edit_script(args: Dictionary) -> Dictionary:
 	_rescan_filesystem()
 	return {"ok": true, "value": {"path": path}}
 
+func list_scripts(args: Dictionary) -> Dictionary:
+	var raw := str(args.get("path", "res://"))
+	if raw == "":
+		raw = "res://"
+	var v := Paths.validate(raw)
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var root: String = v["path"]
+	var out := []
+	_walk_scripts(root, out)
+	return {"ok": true, "value": {"scripts": out}}
+
+# Recursively collect .gd files under `dir`, appending {path, class_name, extends} for each.
+func _walk_scripts(dir: String, out: Array) -> void:
+	var d := DirAccess.open(dir)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		if name == "." or name == "..":
+			name = d.get_next()
+			continue
+		var full := dir.path_join(name)
+		if d.current_is_dir():
+			_walk_scripts(full, out)
+		elif name.ends_with(".gd"):
+			var f := FileAccess.open(full, FileAccess.READ)
+			var header := {"class_name": "", "extends": ""}
+			if f != null:
+				header = _parse_script_header(f.get_as_text())
+			out.append({"path": full, "class_name": header["class_name"], "extends": header["extends"]})
+		name = d.get_next()
+	d.list_dir_end()
+
+# Parse a GDScript source's top-level `class_name X` / `extends Y` via per-line prefix
+# matching (NOT a compile). Returns {class_name, extends}, each "" when absent.
+static func _parse_script_header(text: String) -> Dictionary:
+	var out := {"class_name": "", "extends": ""}
+	for raw in text.split("\n"):
+		var line: String = raw.strip_edges()
+		if line.begins_with("class_name "):
+			out["class_name"] = line.substr("class_name ".length()).strip_edges()
+		elif line.begins_with("extends "):
+			out["extends"] = line.substr("extends ".length()).strip_edges()
+	return out
+
 func validate_script(args: Dictionary) -> Dictionary:
 	var src := str(args.get("content", ""))
 	if src == "" and args.has("path"):
@@ -74,6 +121,13 @@ static func _strip_class_name(src: String) -> String:
 		if lines[i].strip_edges().begins_with("class_name "):
 			lines[i] = ""
 	return "\n".join(lines)
+
+# Live seam: the script editor inside a running editor, or null headlessly.
+func _script_editor():
+	if not Engine.has_meta("GodotMCPPlugin"):
+		return null
+	var plugin = Engine.get_meta("GodotMCPPlugin")
+	return plugin.get_editor_interface().get_script_editor()
 
 # Only meaningful inside a live editor; the plugin registers itself in Engine metadata (Task 10).
 func _rescan_filesystem() -> void:

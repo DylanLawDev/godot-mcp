@@ -475,7 +475,9 @@ func save_scene(args: Dictionary) -> Dictionary:
 	# 3a. No path: save the open scene in-place via the editor.
 	if path == "":
 		if root.scene_file_path == "":
-			return {"ok": false, "error": "current scene has no path; pass {path} to save as a variant"}
+			return {"ok": false, "error": "Current scene has no path; pass {path} to save as a variant"}
+		if not Engine.has_meta("GodotMCPPlugin"):
+			return {"ok": false, "error": "Editor plugin not available"}
 		var plugin = Engine.get_meta("GodotMCPPlugin")
 		var err: int = plugin.get_editor_interface().save_scene()
 		if err != OK:
@@ -488,7 +490,7 @@ func save_scene(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "PackedScene.pack failed with error %d" % perr}
 	var serr := ResourceSaver.save(ps, path)
 	if serr != OK:
-		return {"ok": false, "error": "ResourceSaver.save error %d" % serr}
+		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % serr}
 	_rescan_filesystem()
 	return {"ok": true, "value": {"path": path, "variant": true}}
 
@@ -524,7 +526,7 @@ func create_scene(args: Dictionary) -> Dictionary:
 			return {"ok": false, "error": "Failed to create directory %s (error %d)" % [dir, derr]}
 	var err := ResourceSaver.save(ps, path)
 	if err != OK:
-		return {"ok": false, "error": "ResourceSaver.save error %d" % err}
+		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % err}
 	# Take over the cache slot so a subsequent load(path) returns this scene rather
 	# than a stale PackedScene cached from a prior load of the same path (overwrite case).
 	ps.take_over_path(path)

@@ -484,10 +484,22 @@ func save_scene(args: Dictionary) -> Dictionary:
 			return {"ok": false, "error": "EditorInterface.save_scene failed with error %d" % err}
 		return {"ok": true, "value": {"path": root.scene_file_path, "variant": false}}
 	# 3b. Path provided: pack the live tree and write a variant copy without touching the editor.
+	# Strict `== true`: a destructive flag must not be tripped by a truthy non-bool
+	# (e.g. the string "false", which is truthy in GDScript) from an unvalidated client.
+	var overwrite: bool = args.get("overwrite", false) == true
+	if FileAccess.file_exists(path) and not overwrite:
+		return {"ok": false, "error": "File already exists: " + path + " (pass overwrite=true to replace)"}
 	var ps := PackedScene.new()
 	var perr := ps.pack(root)
 	if perr != OK:
 		return {"ok": false, "error": "PackedScene.pack failed with error %d" % perr}
+	# Create parent dirs before saving, same as create_scene — ResourceSaver.save
+	# does not mkdir, and there is no separate mkdir tool to do it first.
+	var dir := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		var derr := DirAccess.make_dir_recursive_absolute(dir)
+		if derr != OK:
+			return {"ok": false, "error": "Failed to create directory %s (error %d)" % [dir, derr]}
 	var serr := ResourceSaver.save(ps, path)
 	if serr != OK:
 		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % serr}

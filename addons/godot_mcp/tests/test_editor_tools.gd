@@ -29,6 +29,20 @@ func test_capture_errors_only_filters() -> void:
 	assert_eq(es.size(), 1)
 	assert_eq(es[0]["type"], "error")
 
+# Review fix (PR #8): printerr()/stderr output reaches the logger as a log entry with
+# error == true; errors-only must keep it, not just _log_error ("error" type) entries.
+func test_capture_errors_only_includes_stderr_logs() -> void:
+	var cap = OutputCapture.new()
+	cap._log_message("plain", false)       # ordinary stdout: excluded
+	cap._log_message("oops", true)         # printerr/stderr: included
+	cap._log_error("f", "file.gd", 10, "boom", false, false, Logger.ERROR_TYPE_ERROR, [])
+	var es := cap.entries(0, true)
+	assert_eq(es.size(), 2)
+	var texts := []
+	for e in es:
+		texts.append(e.get("text", e.get("message", "")))
+	assert_has(texts, "oops")
+
 func test_capture_ring_eviction() -> void:
 	var cap = OutputCapture.new()
 	cap.cap = 4

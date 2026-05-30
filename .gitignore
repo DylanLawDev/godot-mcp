@@ -15,6 +15,3 @@ export_credentials.cfg
 .mono/
 data_*/
 mono_crash.*.json
-
-# Superpowers working docs (plans, etc.) — not part of the repo
-docs/superpowers/

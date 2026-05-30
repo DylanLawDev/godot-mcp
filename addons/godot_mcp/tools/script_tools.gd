@@ -92,6 +92,18 @@ static func _parse_script_header(text: String) -> Dictionary:
 			out["extends"] = line.substr("extends ".length()).strip_edges()
 	return out
 
+func get_open_scripts(_args: Dictionary) -> Dictionary:
+	var se = _script_editor()
+	if se == null:
+		return {"ok": true, "value": {"scripts": [], "current": null}}
+	var paths := []
+	for scr in se.get_open_scripts():
+		if scr != null:
+			paths.append(scr.resource_path)
+	var cur = se.get_current_script()
+	var current = cur.resource_path if cur != null else null
+	return {"ok": true, "value": {"scripts": paths, "current": current}}
+
 func validate_script(args: Dictionary) -> Dictionary:
 	var src := str(args.get("content", ""))
 	if src == "" and args.has("path"):

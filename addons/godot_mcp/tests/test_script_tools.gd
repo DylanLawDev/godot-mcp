@@ -128,3 +128,11 @@ func test_parse_script_header_empty_when_absent() -> void:
 	var h = ScriptTools._parse_script_header("func _ready():\n\tpass\n")
 	assert_eq(h["class_name"], "")
 	assert_eq(h["extends"], "")
+
+# --- get_open_scripts ---
+
+func test_get_open_scripts_headless_empty() -> void:
+	var r = ScriptTools.new().get_open_scripts({})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["value"]["scripts"], [])
+	assert_eq(r["value"]["current"], null)

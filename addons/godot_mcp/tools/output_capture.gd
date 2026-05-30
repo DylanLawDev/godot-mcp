@@ -5,6 +5,11 @@ extends Logger
 # errors so the MCP server can serve them via editor introspection tools.
 # Logger callbacks may fire off the main thread, so all shared state is guarded
 # by a Mutex. NEVER call print/push_error inside the overrides (infinite recursion).
+#
+# Intentionally separate from script_tools.gd's `_CaptureLogger`: that one is a
+# short-lived, single-threaded, error-only collector scoped to a single
+# GDScript.reload() call (no mutex, no ring buffer). This is the long-lived,
+# thread-safe, capped buffer for both logs and errors. Don't try to unify them.
 
 var _mutex := Mutex.new()
 var _entries: Array = []

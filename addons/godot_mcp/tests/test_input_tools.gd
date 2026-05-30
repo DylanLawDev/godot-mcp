@@ -59,6 +59,12 @@ func test_set_input_action_rejects_bad_names() -> void:
 	assert_false(input.set_input_action({"name": ""})["ok"])
 	assert_false(input.set_input_action({"name": "  "})["ok"])
 	assert_false(input.set_input_action({"name": "foo/bar"})["ok"])
+	# project.godot config / namespace metacharacters are rejected too.
+	assert_false(input.set_input_action({"name": "foo=bar"})["ok"])
+	assert_false(input.set_input_action({"name": "foo\nbar"})["ok"])
+	assert_false(input.set_input_action({"name": "[evil]"})["ok"])
+	# A non-numeric deadzone is rejected rather than silently coerced to 0.0.
+	assert_false(input.set_input_action({"name": "ok_name", "deadzone": "abc"})["ok"])
 
 func test_set_input_action_integration() -> void:
 	var input = InputTools.new()

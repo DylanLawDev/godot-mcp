@@ -1,6 +1,9 @@
 extends "res://addons/godot_mcp/tests/test_case.gd"
 
 const OutputCapture = preload("res://addons/godot_mcp/tools/output_capture.gd")
+const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
+
+const CAPTURE_META := "GodotMCPOutputCapture"
 
 # --- 4.1: output_capture ring-buffer logger ---
 
@@ -50,3 +53,62 @@ func test_capture_limit_returns_last_n() -> void:
 	assert_eq(es.size(), 2)
 	assert_eq(es[0]["text"], "m3")
 	assert_eq(es[1]["text"], "m4")
+
+# --- 4.3: editor_tools (headless: no plugin meta present) ---
+
+func test_get_output_log_headless() -> void:
+	var ed = EditorTools.new()
+	var r := ed.get_output_log({})
+	assert_true(r["ok"])
+	assert_eq(r["value"]["entries"], [])
+
+func test_clear_output_headless() -> void:
+	var ed = EditorTools.new()
+	var r := ed.clear_output({})
+	assert_true(r["ok"])
+	assert_eq(r["value"]["cleared"], false)
+
+func test_get_editor_errors_headless() -> void:
+	var ed = EditorTools.new()
+	var r := ed.get_editor_errors({})
+	assert_true(r["ok"])
+	assert_eq(r["value"]["errors"], [])
+
+func test_get_editor_screenshot_headless() -> void:
+	var ed = EditorTools.new()
+	var r := ed.get_editor_screenshot({})
+	assert_false(r["ok"])
+	assert_eq(r["error"], "Screenshots require a windowed editor")
+
+func test_reload_project_headless() -> void:
+	var ed = EditorTools.new()
+	var r := ed.reload_project({})
+	assert_true(r["ok"])
+	assert_eq(r["value"]["reloaded"], false)
+
+# --- 4.3: pass-through via injected capture in meta ---
+
+func test_output_log_reads_injected_capture() -> void:
+	var cap = OutputCapture.new()
+	cap._log_message("alpha", false)
+	cap._log_error("f", "file.gd", 3, "bad", false, false, Logger.ERROR_TYPE_ERROR, [])
+	Engine.set_meta(CAPTURE_META, cap)
+	var ed = EditorTools.new()
+	var log_r := ed.get_output_log({})
+	var err_r := ed.get_editor_errors({})
+	Engine.remove_meta(CAPTURE_META)
+	assert_eq(log_r["value"]["entries"].size(), 2)
+	assert_eq(err_r["value"]["errors"].size(), 1)
+	assert_eq(err_r["value"]["errors"][0]["message"], "bad")
+
+func test_clear_output_clears_injected_capture() -> void:
+	var cap = OutputCapture.new()
+	cap._log_message("alpha", false)
+	Engine.set_meta(CAPTURE_META, cap)
+	var ed = EditorTools.new()
+	var r := ed.clear_output({})
+	var after := ed.get_output_log({})
+	Engine.remove_meta(CAPTURE_META)
+	assert_true(r["ok"])
+	assert_eq(r["value"]["cleared"], true)
+	assert_eq(after["value"]["entries"].size(), 0)

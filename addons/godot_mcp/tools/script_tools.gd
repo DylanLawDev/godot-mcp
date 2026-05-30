@@ -87,6 +87,10 @@ func list_scripts(args: Dictionary) -> Dictionary:
 	if not v["ok"]:
 		return {"ok": false, "error": v["error"]}
 	var root: String = v["path"]
+	# Reject a misspelled / non-directory root rather than silently reporting an empty
+	# scan — matches list_dir and list_project_resources, which error on the same case.
+	if DirAccess.open(root) == null:
+		return {"ok": false, "error": "Directory not found: " + root}
 	var out := []
 	_walk_scripts(root, out)
 	return {"ok": true, "value": {"scripts": out}}
@@ -104,7 +108,11 @@ func _walk_scripts(dir: String, out: Array) -> void:
 			continue
 		var full := dir.path_join(name)
 		if d.current_is_dir():
-			_walk_scripts(full, out)
+			# Skip symlinked directories: a link back to an ancestor would recurse
+			# forever, and (unlike list_project_resources) there is no result cap here
+			# to break the cycle.
+			if not d.is_link(full):
+				_walk_scripts(full, out)
 		elif name.ends_with(".gd"):
 			var f := FileAccess.open(full, FileAccess.READ)
 			var header := {"class_name": "", "extends": ""}

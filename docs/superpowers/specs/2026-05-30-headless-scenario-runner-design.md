@@ -107,7 +107,7 @@ The live main loop. Responsibilities:
 3. Install the `output_capture.gd` ring-buffer `Logger` via `OS.add_logger` to capture the
    game's logs/errors during the run.
 4. `load(scene).instantiate()`, add it under `root`, set as `current_scene`.
-5. Iterate steps: pump frames for wait steps (await `process_frame`), delegate the rest to
+5. Iterate steps: pump frames for wait steps (await `physics_frame`), delegate the rest to
    the engine.
 6. Attach captured `errors` + `log` tail to the engine results; write JSON to `--out`.
 7. Set exit code = `0` if `passed` else non-zero; `quit()`.

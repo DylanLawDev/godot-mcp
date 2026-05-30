@@ -119,6 +119,15 @@ func test_list_scripts_rejects_traversal() -> void:
 	var r = ScriptTools.new().list_scripts({"path": "../etc"})
 	assert_false(r["ok"], str(r))
 
+# Review fix (PR #7): a misspelled / non-directory root errors rather than reporting
+# an empty result, so a typo can't be mistaken for "no scripts here".
+func test_list_scripts_rejects_missing_root() -> void:
+	var r = ScriptTools.new().list_scripts({"path": "res://no_such_dir_xyz"})
+	assert_false(r["ok"], str(r))
+	# A path that points at a file (not a directory) is rejected too.
+	var r2 = ScriptTools.new().list_scripts({"path": "res://examples/data/notes.txt"})
+	assert_false(r2["ok"], str(r2))
+
 func test_parse_script_header_extracts_class_name_and_extends() -> void:
 	var h = ScriptTools._parse_script_header("@tool\nclass_name Foo\nextends Node2D\nfunc _ready():\n\tpass\n")
 	assert_eq(h["class_name"], "Foo")

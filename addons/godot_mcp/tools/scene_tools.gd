@@ -491,6 +491,9 @@ func save_scene(args: Dictionary) -> Dictionary:
 	var serr := ResourceSaver.save(ps, path)
 	if serr != OK:
 		return {"ok": false, "error": "ResourceSaver.save failed with error %d" % serr}
+	# Take over the cache slot so a later load(path) returns this variant rather than a
+	# stale PackedScene cached from a prior load of the same path (matches create_scene).
+	ps.take_over_path(path)
 	_rescan_filesystem()
 	return {"ok": true, "value": {"path": path, "variant": true}}
 

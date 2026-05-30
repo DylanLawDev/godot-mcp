@@ -129,6 +129,16 @@ func test_parse_script_header_empty_when_absent() -> void:
 	assert_eq(h["class_name"], "")
 	assert_eq(h["extends"], "")
 
+func test_parse_script_header_single_line_class_name_extends() -> void:
+	var h = ScriptTools._parse_script_header("class_name Foo extends Node2D\n")
+	assert_eq(h["class_name"], "Foo")
+	assert_eq(h["extends"], "Node2D")
+
+func test_parse_script_header_ignores_indented_inner_class_extends() -> void:
+	# An indented `extends` inside an inner class body is not the top-level base.
+	var h = ScriptTools._parse_script_header("extends Node\nclass Inner:\n\textends RefCounted\n")
+	assert_eq(h["extends"], "Node")
+
 # --- get_open_scripts ---
 
 func test_get_open_scripts_headless_empty() -> void:
@@ -178,6 +188,11 @@ func test_apply_edit_replace_defaults_empty() -> void:
 	var r = ScriptTools.new()._apply_edit("xREMOVEy", {"find": "REMOVE"})
 	assert_true(r["ok"], str(r))
 	assert_eq(r["text"], "xy")
+
+func test_apply_edit_empty_find_errors() -> void:
+	var r = ScriptTools.new()._apply_edit("x", {"find": ""})
+	assert_false(r["ok"])
+	assert_has(r["error"], "must not be empty")
 
 func test_edit_script_find_replace_on_file() -> void:
 	_teardown()

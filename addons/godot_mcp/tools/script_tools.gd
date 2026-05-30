@@ -37,7 +37,12 @@ func edit_script(args: Dictionary) -> Dictionary:
 	var path: String = v["path"]
 	if not FileAccess.file_exists(path):
 		return {"ok": false, "error": "Script not found: " + path}
-	var src := FileAccess.open(path, FileAccess.READ).get_as_text()
+	# file_exists() does not guarantee the file opens (it may be unreadable/locked).
+	var rf := FileAccess.open(path, FileAccess.READ)
+	if rf == null:
+		return {"ok": false, "error": "Failed to open for reading: " + path}
+	var src := rf.get_as_text()
+	rf = null
 	var edited := _apply_edit(src, args)
 	if not edited["ok"]:
 		return {"ok": false, "error": edited["error"]}
@@ -62,6 +67,8 @@ func _apply_edit(src: String, args: Dictionary) -> Dictionary:
 	if not has_find:
 		return {"ok": false, "text": "", "error": "Provide content or find"}
 	var find := str(args.get("find", ""))
+	if find == "":
+		return {"ok": false, "text": "", "error": "find must not be empty"}
 	var replace := str(args.get("replace", ""))
 	var count := src.count(find)
 	if count == 0:
@@ -112,11 +119,18 @@ func _walk_scripts(dir: String, out: Array) -> void:
 static func _parse_script_header(text: String) -> Dictionary:
 	var out := {"class_name": "", "extends": ""}
 	for raw in text.split("\n"):
-		var line: String = raw.strip_edges()
-		if line.begins_with("class_name "):
-			out["class_name"] = line.substr("class_name ".length()).strip_edges()
-		elif line.begins_with("extends "):
-			out["extends"] = line.substr("extends ".length()).strip_edges()
+		# Top-level declarations sit at column 0; matching the un-stripped line
+		# avoids picking up an indented `extends` inside an inner `class X:` body.
+		if raw.begins_with("class_name "):
+			# `class_name Foo extends Bar` is a legal single line — split off the extends.
+			var rest := raw.substr("class_name ".length()).strip_edges()
+			var idx := rest.find(" extends ")
+			if idx != -1:
+				out["extends"] = rest.substr(idx + " extends ".length()).strip_edges()
+				rest = rest.substr(0, idx).strip_edges()
+			out["class_name"] = rest
+		elif raw.begins_with("extends "):
+			out["extends"] = raw.substr("extends ".length()).strip_edges()
 	return out
 
 func get_open_scripts(_args: Dictionary) -> Dictionary:

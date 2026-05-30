@@ -136,3 +136,54 @@ func test_get_open_scripts_headless_empty() -> void:
 	assert_true(r["ok"], str(r))
 	assert_eq(r["value"]["scripts"], [])
 	assert_eq(r["value"]["current"], null)
+
+# --- edit_script find/replace (_apply_edit pure logic) ---
+
+func test_apply_edit_full_content() -> void:
+	var r = ScriptTools.new()._apply_edit("old\n", {"content": "new\n"})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["text"], "new\n")
+
+func test_apply_edit_single_replace() -> void:
+	var r = ScriptTools.new()._apply_edit("var a = 1\n", {"find": "a = 1", "replace": "a = 2"})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["text"], "var a = 2\n")
+
+func test_apply_edit_find_not_found_errors() -> void:
+	var r = ScriptTools.new()._apply_edit("var a = 1\n", {"find": "nope"})
+	assert_false(r["ok"])
+	assert_has(r["error"], "not found")
+
+func test_apply_edit_both_content_and_find_errors() -> void:
+	var r = ScriptTools.new()._apply_edit("x", {"content": "y", "find": "x"})
+	assert_false(r["ok"])
+	assert_has(r["error"], "not both")
+
+func test_apply_edit_neither_errors() -> void:
+	var r = ScriptTools.new()._apply_edit("x", {})
+	assert_false(r["ok"])
+	assert_has(r["error"], "Provide")
+
+func test_apply_edit_multiple_without_replace_all_errors() -> void:
+	var r = ScriptTools.new()._apply_edit("a a a\n", {"find": "a", "replace": "b"})
+	assert_false(r["ok"])
+	assert_has(r["error"], "occurrences")
+
+func test_apply_edit_multiple_with_replace_all() -> void:
+	var r = ScriptTools.new()._apply_edit("a a a\n", {"find": "a", "replace": "b", "replace_all": true})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["text"], "b b b\n")
+
+func test_apply_edit_replace_defaults_empty() -> void:
+	var r = ScriptTools.new()._apply_edit("xREMOVEy", {"find": "REMOVE"})
+	assert_true(r["ok"], str(r))
+	assert_eq(r["text"], "xy")
+
+func test_edit_script_find_replace_on_file() -> void:
+	_teardown()
+	var st = ScriptTools.new()
+	st.create_script({"path": "_scripttools_test/fr.gd", "content": "extends Node\nvar speed = 1\n"})
+	var r = st.edit_script({"path": "_scripttools_test/fr.gd", "find": "speed = 1", "replace": "speed = 9"})
+	assert_true(r["ok"], str(r))
+	assert_eq(FileAccess.open("res://_scripttools_test/fr.gd", FileAccess.READ).get_as_text(), "extends Node\nvar speed = 9\n")
+	_teardown()

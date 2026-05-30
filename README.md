@@ -72,7 +72,7 @@ The one cost — GDScript has no built-in HTTP server — is bounded: MCP's
 Streamable HTTP transport permits plain `POST → application/json` responses, so
 v1 needs only HTTP/1.1 request parsing + JSON-RPC, not long-lived SSE streams.
 
-## v1 scope (28 tools implemented)
+## v1 scope (33 tools implemented)
 
 The daily agent loop is *read code/scene → edit → run → see errors*:
 
@@ -97,6 +97,16 @@ The daily agent loop is *read code/scene → edit → run → see errors*:
   `add_resource` instantiates a `Resource` subtype and assigns it to a node property;
   `set_anchor_preset` applies a `Control` layout preset; `attach_script` attaches an
   existing `.gd` to a node — all mutating tools are undoable
+- **Editor** *(implemented)*: `get_output_log` and `get_editor_errors` read engine
+  log/error output captured by a ring-buffer `Logger` the plugin installs via
+  `OS.add_logger` (Godot exposes no public API to *read* the editor's Output dock,
+  so capturing our own stream is the only robust path); `clear_output` clears **the
+  MCP capture buffer, not the editor's Output dock**; `get_editor_screenshot` captures
+  the editor window (PNG to a `res://` path or base64) and **requires a windowed,
+  non-headless editor** — in `--headless` it returns a clean error; `reload_project`
+  triggers an editor filesystem rescan. Note: `reload_plugin` (godot-mcp-pro parity) is
+  intentionally **deferred** — a plugin disabling/reloading itself would tear down the
+  HTTP server and `_process` loop servicing the very request, so it can't safely respond.
 - **Run/feedback** *(pending)*: `run_scene`, `stop_scene`, `get_errors`,
   `get_console_log` — not yet implemented
 

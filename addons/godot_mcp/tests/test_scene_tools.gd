@@ -69,6 +69,10 @@ func test_set_anchor_preset_no_scene_open() -> void:
 	var st = SceneTools.new()
 	assert_false(st.set_anchor_preset({"path": ".", "preset": 15})["ok"])
 
+func test_attach_script_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.attach_script({"path": ".", "script_path": "res://examples/scripts/player.gd"})["ok"])
+
 # Build a detached tree:  Root -> [Child (Node2D), Branch -> Leaf]
 func _make_tree() -> Node:
 	var root := Node.new()
@@ -307,6 +311,20 @@ func test_encode_signals_reports_connection() -> void:
 	assert_true(found.has("renamed->queue_free"))
 	assert_eq(found["renamed->queue_free"], "Branch/Leaf")
 	root.free()
+
+# Task 2.6: _load_script validates the path and loads a real Script; rejects
+# traversal, missing files and non-script resources.
+func test_load_script_validates_and_loads() -> void:
+	var st = SceneTools.new()
+	var ok_res: Dictionary = st._load_script("res://examples/scripts/player.gd")
+	assert_true(ok_res["ok"])
+	assert_true(ok_res["value"] is Script)
+	# Traversal rejected by Paths.validate.
+	assert_false(st._load_script("res://../etc/passwd")["ok"])
+	# Missing file rejected.
+	assert_false(st._load_script("res://examples/scripts/nope_missing.gd")["ok"])
+	# A non-script resource is not a Script.
+	assert_false(st._load_script("res://examples/data/notes.txt")["ok"])
 
 # Task 2.5: _resolve_preset maps int passthrough + name variants to LayoutPreset ints.
 func test_resolve_preset_name_and_int() -> void:

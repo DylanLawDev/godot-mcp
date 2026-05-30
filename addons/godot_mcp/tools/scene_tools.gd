@@ -2,6 +2,7 @@
 extends RefCounted
 
 const _NO_SCENE := "No scene is currently open"
+const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 
 # --- Public tools ---
 
@@ -280,6 +281,30 @@ func disconnect_signal(args: Dictionary) -> Dictionary:
 		ur.commit_action()
 	return {"ok": true, "value": {"from_path": from_path, "signal": sig, "to_path": to_path, "method": method}}
 
+func attach_script(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var script_path := str(args.get("script_path", ""))
+	var loaded := _load_script(script_path)
+	if not loaded["ok"]:
+		return {"ok": false, "error": loaded["error"]}
+	var scr = loaded["value"]
+	var old = node.get_script()
+	var ur = _undo_redo()
+	if ur == null:
+		node.set_script(scr)
+	else:
+		ur.create_action("MCP: attach script")
+		ur.add_do_method(node, "set_script", scr)
+		ur.add_undo_method(node, "set_script", old)
+		ur.commit_action()
+	return {"ok": true, "value": {"path": path, "script_path": loaded["path"]}}
+
 func set_anchor_preset(args: Dictionary) -> Dictionary:
 	var root := _edited_scene_root()
 	if root == null:
@@ -395,6 +420,20 @@ func find_nodes_in_group(args: Dictionary) -> Dictionary:
 	return {"ok": true, "value": {"paths": out}}
 
 # --- Pure helpers ---
+
+# Validate `script_path`, ensure it exists and loads as a Script.
+# Returns {ok, value: Script, path} or {ok:false, error}.
+func _load_script(script_path: String) -> Dictionary:
+	var v := Paths.validate(script_path)
+	if not v["ok"]:
+		return {"ok": false, "error": v["error"]}
+	var p: String = v["path"]
+	if not FileAccess.file_exists(p):
+		return {"ok": false, "error": "Script not found: " + script_path}
+	var scr = load(p)
+	if scr == null or not (scr is Script):
+		return {"ok": false, "error": "Not a script: " + script_path}
+	return {"ok": true, "value": scr, "path": p}
 
 # Map a preset value (int passthrough, or a name like "PRESET_FULL_RECT" /
 # "full_rect" / "FULL_RECT") to a LayoutPreset int. Returns -1 if unknown.

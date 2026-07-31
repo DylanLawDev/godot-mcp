@@ -76,6 +76,7 @@ func _main(scenario_path: String, out_path: String) -> void:
 
 	var eng := ScenarioEngine.new()
 	eng.set_root(inst)
+	eng.set_tree(self)
 	var frames_run := 0
 	for step in steps:
 		var res: Dictionary = eng.execute(step)
@@ -87,6 +88,25 @@ func _main(scenario_path: String, out_path: String) -> void:
 				await process_frame
 				frames_run += 1
 				cap.capture(root)
+		elif res.has("step_frames"):
+			# Frame stepping: each unpause -> await process_frame -> re-pause
+			# advances node processing by exactly one rendered frame (the
+			# process_frame signal fires before that iteration's _process, so
+			# re-pausing on resume skips the NEXT frame, not the stepped one).
+			# First align to a process_frame boundary while paused: resuming
+			# from a physics_frame wait leaves us mid-iteration, where the
+			# pattern's first await would span no process phase at all.
+			var step_cap = eng.capture_for(str(res.get("capture_dir", "")))
+			paused = true
+			await process_frame
+			frames_run += 1
+			for _i in int(res["step_frames"]):
+				paused = false
+				await process_frame
+				paused = true
+				frames_run += 1
+				if step_cap != null:
+					step_cap.capture(root)
 		elif res.has("frames"):
 			for _i in int(res["frames"]):
 				await physics_frame

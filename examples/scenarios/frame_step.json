@@ -1,0 +1,17 @@
+{
+  "scene": "res://examples/scenes/frame_step_demo.tscn",
+  "steps": [
+    { "type": "wait_frames", "count": 2 },
+    { "type": "set_paused", "paused": true },
+    { "type": "set_property", "path": ".", "properties": { "process_ticks": "0" } },
+    { "type": "wait_frames", "count": 5 },
+    { "type": "assert", "kind": "property", "path": ".", "property": "process_ticks", "op": "eq", "value": "0" },
+    { "type": "step_frames", "count": 3, "dir": "user://captures/steps" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "process_ticks", "op": "eq", "value": "3" },
+    { "type": "step_frames", "count": 1, "dir": "user://captures/steps" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "process_ticks", "op": "eq", "value": "4" },
+    { "type": "set_paused", "paused": false },
+    { "type": "wait_frames", "count": 2 },
+    { "type": "assert", "kind": "property", "path": ".", "property": "process_ticks", "op": "gt", "value": "4" }
+  ]
+}

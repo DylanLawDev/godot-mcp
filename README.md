@@ -178,6 +178,9 @@ A scenario is a JSON list of steps. Available step types:
 - `watch_signal` — record signal emissions
 - `capture_frames` — save N consecutive rendered frames as numbered PNGs
   (optionally downscaled); run with `--render` to get real pixels
+- `set_paused` / `step_frames` — pause the game, then advance exactly one
+  rendered frame at a time (optionally capturing after each step) for
+  frame-by-frame diffs of temporal artifacts
 - `assert` — check a condition and pass/fail the run
 
 This runs separately from the editor (it's launched via the shell, not over

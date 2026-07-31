@@ -70,4 +70,7 @@ node-manipulation logic with the editor tools through `utils/node_ops.gd`. Actio
 poll-observable only; raw `InputEvent` synthesis is deferred (v2). The `capture_frames`
 step (`runtime/frame_capture.gd`) saves consecutive rendered frames as PNGs; it needs the
 windowed `--render` mode of `run_scenario.sh` (headless renders nothing and records
-per-frame manifest errors instead).
+per-frame manifest errors instead). `set_paused`/`step_frames` pause the tree and advance
+exactly one rendered frame per step (the runner aligns to a `process_frame` boundary while
+paused, then unpauses across exactly one process phase per step — don't "simplify" that
+loop), optionally capturing after each step.

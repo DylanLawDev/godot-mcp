@@ -29,6 +29,20 @@ var _fatal := ""
 func set_root(node: Node) -> void:
 	root = node
 
+# The SceneTree whose pause flag set_paused flips. The runner injects itself;
+# without an injection we fall back to the registered main loop (null while a
+# SceneTree script is still in _init — which is where the unit suite runs).
+var _tree: SceneTree = null
+
+func set_tree(tree: SceneTree) -> void:
+	_tree = tree
+
+func _scene_tree() -> SceneTree:
+	if _tree != null:
+		return _tree
+	var ml := Engine.get_main_loop()
+	return ml as SceneTree if ml is SceneTree else null
+
 func execute(step: Dictionary) -> Dictionary:
 	var type := str(step.get("type", ""))
 	match type:
@@ -57,6 +71,10 @@ func execute(step: Dictionary) -> Dictionary:
 			return _watch_signal(step)
 		"capture_frames":
 			return _capture_frames(step)
+		"set_paused":
+			return _set_paused(step)
+		"step_frames":
+			return _step_frames(step)
 		"assert":
 			return _assert(step)
 		_:
@@ -178,16 +196,53 @@ func _capture_frames(step: Dictionary) -> Dictionary:
 	var dir := str(step.get("dir", ""))
 	if dir.strip_edges() == "":
 		return _step_fail("capture_frames", "'dir' is required")
-	var cap: FrameCapture = _captures.get(dir)
-	if cap == null:
-		cap = FrameCapture.new()
-		var conf := cap.configure(dir, int(step.get("downscale", 1)))
-		if not conf["ok"]:
-			return _step_fail("capture_frames", conf["error"])
-		_captures[dir] = cap
+	var prep := _prepare_capture(dir, int(step.get("downscale", 1)))
+	if not prep["ok"]:
+		return _step_fail("capture_frames", prep["error"])
 	var out := _step_ok("capture_frames", "count=%d dir=%s" % [count, dir])
 	out["capture_frames"] = count
 	out["capture_dir"] = dir
+	return out
+
+# Get-or-create the FrameCapture for a dir (one numbering sequence per dir).
+func _prepare_capture(dir: String, downscale: int) -> Dictionary:
+	if _captures.has(dir):
+		return {"ok": true, "error": ""}
+	var cap := FrameCapture.new()
+	var conf := cap.configure(dir, downscale)
+	if conf["ok"]:
+		_captures[dir] = cap
+	return conf
+
+# Pauses/unpauses the whole tree (SceneTree.paused): _process/_physics_process
+# stop for every node not opting out via process_mode.
+func _set_paused(step: Dictionary) -> Dictionary:
+	var tree := _scene_tree()
+	if tree == null:
+		return _step_fail("set_paused", "No SceneTree to pause")
+	var p := bool(step.get("paused", true))
+	tree.paused = p
+	return _step_ok("set_paused", "paused=" + str(p))
+
+# Frame stepping: the runner advances the tree exactly `count` frames, one at a
+# time (unpause -> await one process_frame -> re-pause; verified to run _process
+# exactly once per step), capturing after each if "dir" is given. The tree is
+# left PAUSED afterward regardless of its prior state — resume with set_paused.
+func _step_frames(step: Dictionary) -> Dictionary:
+	var count := int(step.get("count", 1))
+	if count < 1:
+		return _step_fail("step_frames", "'count' must be >= 1")
+	var dir := str(step.get("dir", ""))
+	if step.has("dir") and dir.strip_edges() == "":
+		return _step_fail("step_frames", "'dir' must not be blank")
+	if dir != "":
+		var prep := _prepare_capture(dir, int(step.get("downscale", 1)))
+		if not prep["ok"]:
+			return _step_fail("step_frames", prep["error"])
+	var out := _step_ok("step_frames", "count=%d%s" % [count, "" if dir == "" else " dir=" + dir])
+	out["step_frames"] = count
+	if dir != "":
+		out["capture_dir"] = dir
 	return out
 
 # The runner's handle to a prepared capture destination.

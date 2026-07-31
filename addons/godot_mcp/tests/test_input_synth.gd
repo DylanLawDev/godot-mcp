@@ -129,3 +129,50 @@ func test_unknown_kind_rejected() -> void:
 
 func test_missing_kind_rejected() -> void:
 	assert_false(InputSynth.build({})["ok"])
+
+# --- button_mask tracking (mouse chords / drags) ---
+# build() reads Input.get_mouse_button_mask() so masks reflect earlier
+# synthesized presses. These tests drive Input directly to control that state.
+
+func test_mouse_button_press_carries_own_mask_bit() -> void:
+	var r := InputSynth.build({"kind": "mouse_button", "button": "right"})
+	assert_eq(int((r["event"] as InputEventMouseButton).button_mask), MOUSE_BUTTON_MASK_RIGHT)
+	var x := InputSynth.build({"kind": "mouse_button", "button": "xbutton1"})
+	assert_eq(int((x["event"] as InputEventMouseButton).button_mask), MOUSE_BUTTON_MASK_MB_XBUTTON1)
+
+func test_mouse_button_mask_accumulates_held_buttons() -> void:
+	# Hold left (via the Input singleton, as the engine's dispatch would)...
+	var left := InputSynth.build({"kind": "mouse_button", "button": "left"})
+	Input.parse_input_event(left["event"])
+	Input.flush_buffered_events()
+	# ...then a right press must carry BOTH bits.
+	var r := InputSynth.build({"kind": "mouse_button", "button": "right"})
+	assert_eq(int((r["event"] as InputEventMouseButton).button_mask), MOUSE_BUTTON_MASK_LEFT | MOUSE_BUTTON_MASK_RIGHT)
+	# ...and a left release drops only the left bit (right isn't held in Input).
+	var rel := InputSynth.build({"kind": "mouse_button", "button": "left", "pressed": false})
+	assert_eq(int((rel["event"] as InputEventMouseButton).button_mask), 0)
+	Input.parse_input_event(rel["event"])
+	Input.flush_buffered_events()
+	assert_false(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+
+func test_mouse_motion_carries_held_mask() -> void:
+	var press := InputSynth.build({"kind": "mouse_button", "button": "left", "position": [1, 1]})
+	Input.parse_input_event(press["event"])
+	Input.flush_buffered_events()
+	var m := InputSynth.build({"kind": "mouse_motion", "position": [9, 9]})
+	assert_eq(int((m["event"] as InputEventMouseMotion).button_mask), MOUSE_BUTTON_MASK_LEFT)
+	var rel := InputSynth.build({"kind": "mouse_button", "button": "left", "pressed": false})
+	Input.parse_input_event(rel["event"])
+	Input.flush_buffered_events()
+	var m2 := InputSynth.build({"kind": "mouse_motion", "position": [9, 9]})
+	assert_eq(int((m2["event"] as InputEventMouseMotion).button_mask), 0)
+
+func test_wheel_button_keeps_held_mask_unchanged() -> void:
+	var press := InputSynth.build({"kind": "mouse_button", "button": "left"})
+	Input.parse_input_event(press["event"])
+	Input.flush_buffered_events()
+	var w := InputSynth.build({"kind": "mouse_button", "button": "wheel_up"})
+	assert_eq(int((w["event"] as InputEventMouseButton).button_mask), MOUSE_BUTTON_MASK_LEFT)
+	var rel := InputSynth.build({"kind": "mouse_button", "button": "left", "pressed": false})
+	Input.parse_input_event(rel["event"])
+	Input.flush_buffered_events()

@@ -140,16 +140,23 @@ func _input_event(step: Dictionary) -> Dictionary:
 	var built := InputSynth.build(step)
 	if not built["ok"]:
 		return _step_fail("input_event", built["error"])
-	Input.parse_input_event(built["event"])
-	Input.flush_buffered_events()
-	var out := _step_ok("input_event", built["detail"])
 	var hold_spec := {}
 	if step.has("hold_frames"):
 		hold_spec["frames"] = step["hold_frames"]
 	elif step.has("hold_seconds"):
 		hold_spec["seconds"] = step["hold_seconds"]
 	var hold := _duration_frames(hold_spec)
-	if hold > 0 and bool(step.get("pressed", true)) and str(step.get("kind", "")) != "mouse_motion":
+	var holdable := bool(step.get("pressed", true)) and str(step.get("kind", "")) != "mouse_motion"
+	# An explicitly requested hold on a holdable press must be a positive
+	# duration — a zero/negative one would silently skip the auto-release and
+	# leave the key/button/action stuck for the rest of the run. Validate
+	# BEFORE dispatch so the failed step presses nothing.
+	if holdable and not hold_spec.is_empty() and hold <= 0:
+		return _step_fail("input_event", "hold requires 'hold_frames' or 'hold_seconds' > 0")
+	Input.parse_input_event(built["event"])
+	Input.flush_buffered_events()
+	var out := _step_ok("input_event", built["detail"])
+	if hold > 0 and holdable:
 		var release := step.duplicate()
 		release.erase("hold_frames")
 		release.erase("hold_seconds")

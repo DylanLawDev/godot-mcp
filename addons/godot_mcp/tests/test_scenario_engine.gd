@@ -373,3 +373,17 @@ func test_capture_texture_missing_out_is_fatal() -> void:
 	eng.set_root(root)
 	assert_false(eng.execute({"type": "capture_texture", "path": "Sub", "property": "position"})["ok"])
 	root.free()
+
+func test_input_event_nonpositive_hold_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_event", "kind": "key", "key": "Up", "hold_frames": 0})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	assert_false(Input.is_key_pressed(KEY_UP), "failed hold must not press the key")
+	var eng2 := ScenarioEngine.new()
+	eng2.set_root(root)
+	assert_false(eng2.execute({"type": "input_event", "kind": "action", "action": "ui_accept", "hold_seconds": -1.0})["ok"])
+	assert_false(Input.is_action_pressed("ui_accept"))
+	root.free()

@@ -1,10 +1,11 @@
 @tool
 extends RefCounted
 
-# Builds raw InputEvents from scenario step dictionaries. Pure construction —
-# no Input singleton, no viewport — so every branch is unit-testable headless.
-# The engine (scenario_engine.gd) owns dispatch: Input.parse_input_event for
-# poll state plus Viewport.push_input for _input/_unhandled_input delivery.
+# Builds raw InputEvents from scenario step dictionaries. Construction only —
+# it never dispatches (the engine owns that via Input.parse_input_event) — but
+# mouse events READ Input.get_mouse_button_mask() so `button_mask` reflects the
+# buttons held by earlier synthesized presses: handlers that gate dragging or
+# chords on the mask see the same state the poll API reports.
 #
 # Returns {"ok": true, "event": InputEvent, "detail": String} or
 # {"ok": false, "error": String}.
@@ -77,9 +78,24 @@ static func _build_mouse_button(step: Dictionary) -> Dictionary:
 		ev.global_position = pos["value"]
 	elif step.has("position"):
 		return {"ok": false, "error": "'position' must be a [x, y] array"}
-	ev.button_mask = MOUSE_BUTTON_MASK_LEFT if ev.button_index == MOUSE_BUTTON_LEFT and ev.pressed else 0
+	# Start from the currently-held mask (as tracked by Input after earlier
+	# dispatches) and add/remove this event's own bit, mirroring OS events.
+	# Wheel "buttons" are momentary and have no mask bit; they carry the held
+	# mask unchanged.
+	var mask := int(Input.get_mouse_button_mask())
+	var bit := _mask_bit(ev.button_index)
+	ev.button_mask = (mask | bit) if ev.pressed else (mask & ~bit)
 	_apply_modifiers(ev, step)
 	return {"ok": true, "event": ev, "detail": "mouse %s %s at %s" % [name, "press" if ev.pressed else "release", str(ev.position)]}
+
+static func _mask_bit(button: MouseButton) -> int:
+	match button:
+		MOUSE_BUTTON_LEFT: return MOUSE_BUTTON_MASK_LEFT
+		MOUSE_BUTTON_RIGHT: return MOUSE_BUTTON_MASK_RIGHT
+		MOUSE_BUTTON_MIDDLE: return MOUSE_BUTTON_MASK_MIDDLE
+		MOUSE_BUTTON_XBUTTON1: return MOUSE_BUTTON_MASK_MB_XBUTTON1
+		MOUSE_BUTTON_XBUTTON2: return MOUSE_BUTTON_MASK_MB_XBUTTON2
+	return 0
 
 static func _build_mouse_motion(step: Dictionary) -> Dictionary:
 	var ev := InputEventMouseMotion.new()
@@ -99,6 +115,8 @@ static func _build_mouse_motion(step: Dictionary) -> Dictionary:
 		ev.velocity = vel["value"]
 	elif step.has("velocity"):
 		return {"ok": false, "error": "'velocity' must be a [x, y] array"}
+	# Motion during a synthesized drag must report the held buttons.
+	ev.button_mask = int(Input.get_mouse_button_mask())
 	_apply_modifiers(ev, step)
 	return {"ok": true, "event": ev, "detail": "mouse motion to %s (rel %s)" % [str(ev.position), str(ev.relative)]}
 

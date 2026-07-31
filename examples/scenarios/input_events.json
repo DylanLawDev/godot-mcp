@@ -1,0 +1,19 @@
+{
+  "scene": "res://examples/scenes/input_events_demo.tscn",
+  "steps": [
+    { "type": "input_event", "kind": "key", "key": "Right", "hold_frames": 2 },
+    { "type": "wait_frames", "count": 2 },
+    { "type": "assert", "kind": "property", "path": ".", "property": "key_events", "op": "eq", "value": "2" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "last_key", "op": "eq", "value": "Right" },
+    { "type": "input_event", "kind": "mouse_button", "button": "left", "position": [12, 34] },
+    { "type": "input_event", "kind": "mouse_button", "button": "left", "pressed": false, "position": [12, 34] },
+    { "type": "input_event", "kind": "mouse_motion", "position": [40, 40], "relative": [5, 0] },
+    { "type": "wait_frames", "count": 1 },
+    { "type": "assert", "kind": "property", "path": ".", "property": "mouse_button_events", "op": "eq", "value": "2" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "mouse_motion_events", "op": "eq", "value": "1" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "last_click", "op": "eq", "value": "Vector2(12, 34)" },
+    { "type": "input_action", "action": "ui_right", "mode": "hold", "seconds": 0.5 },
+    { "type": "wait_frames", "count": 1 },
+    { "type": "assert", "kind": "property", "path": ".", "property": "position:x", "op": "gt", "value": "50" }
+  ]
+}

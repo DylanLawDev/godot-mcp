@@ -171,7 +171,10 @@ addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/move_right.json /tmp
 A scenario is a JSON list of steps. Available step types:
 
 - `wait_frames` / `wait_seconds` — let the game tick
-- `input_action` — press/release an input-map action
+- `input_action` — press/release/tap/hold an input-map action
+- `input_event` — synthesize a raw key/mouse/action `InputEvent` (fires
+  `_input`/`_unhandled_input` and updates poll state, with optional auto-release
+  via `hold_frames`/`hold_seconds`)
 - `set_property` — change a live node's property
 - `create_node` / `delete_node` — manipulate the running tree
 - `call_method` — call a method on a node
@@ -179,9 +182,8 @@ A scenario is a JSON list of steps. Available step types:
 - `assert` — check a condition and pass/fail the run
 
 This runs separately from the editor (it's launched via the shell, not over
-MCP), so you can use it in CI. *Note: input is currently poll-observable only —
-raw key/mouse `InputEvent` synthesis, `_input` delivery, and in-game screenshots
-are planned for a future version.*
+MCP), so you can use it in CI. *Note: in-game screenshots are planned for a
+future version.*
 
 ---
 

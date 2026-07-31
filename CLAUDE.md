@@ -66,5 +66,7 @@ Beyond the in-editor MCP tools, a **headless scenario runner** (`addons/godot_mc
 lets Claude launch a separate `--headless` Godot process that runs a real scene, drives it
 with input-map actions, and manipulates/inspects live runtime nodes, emitting a pass/fail
 results JSON. It is launched via Bash (`runtime/run_scenario.sh`), not over MCP, and shares
-node-manipulation logic with the editor tools through `utils/node_ops.gd`. Action input is
-poll-observable only; raw `InputEvent` synthesis and screenshots are deferred (v2).
+node-manipulation logic with the editor tools through `utils/node_ops.gd`. Input can be
+action-based (`input_action`, poll-observable, with press/release/tap/hold modes) or raw
+`InputEvent` synthesis (`input_event` via `runtime/input_synth.gd`, which also fires
+`_input`/`_unhandled_input`); in-game screenshots are deferred (v2).

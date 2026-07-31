@@ -4,6 +4,7 @@ extends RefCounted
 const _NO_SCENE := "No scene is currently open"
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
+const TextureDump = preload("res://addons/godot_mcp/utils/texture_dump.gd")
 
 # --- Public tools ---
 
@@ -509,6 +510,44 @@ func save_scene(args: Dictionary) -> Dictionary:
 	ps.take_over_path(path)
 	_rescan_filesystem()
 	return {"ok": true, "value": {"path": path, "variant": true}}
+
+# Reads back a texture reachable from a node in the edited scene — a
+# SubViewport's render target (omit "property") or any Texture2D property path
+# ("texture", "material:albedo_texture") — and returns it as a PNG. Mirrors
+# get_editor_screenshot's output contract: with "out_path" the PNG is written
+# to a validated res:// path, otherwise it's returned base64-encoded.
+# GPU-backed textures (a SubViewport's ViewportTexture) only have pixels in a
+# windowed editor; CPU textures (ImageTexture and friends) work headless too.
+func capture_texture(args: Dictionary) -> Dictionary:
+	var root := _edited_scene_root()
+	if root == null:
+		return {"ok": false, "error": _NO_SCENE}
+	var path := str(args.get("path", ""))
+	var node := _resolve(root, path)
+	if node == null:
+		return {"ok": false, "error": "Node not found: " + path}
+	var property := str(args.get("property", ""))
+	if args.has("out_path"):
+		var v := Paths.validate(str(args.get("out_path", "")))
+		if not v["ok"]:
+			return {"ok": false, "error": v["error"]}
+		var res := TextureDump.dump_to_png(node, property, v["path"])
+		if not res["ok"]:
+			return res
+		_rescan_filesystem()
+		return {"ok": true, "value": {"path": res["path"], "width": res["width"], "height": res["height"]}}
+	var resolved := TextureDump.resolve_texture(node, property)
+	if not resolved["ok"]:
+		return resolved
+	var imaged := TextureDump.to_image(resolved["texture"])
+	if not imaged["ok"]:
+		return imaged
+	var img: Image = imaged["image"]
+	return {"ok": true, "value": {
+		"width": img.get_width(),
+		"height": img.get_height(),
+		"png_base64": Marshalls.raw_to_base64(img.save_png_to_buffer()),
+	}}
 
 func create_scene(args: Dictionary) -> Dictionary:
 	var v := Paths.validate(str(args.get("path", "")))

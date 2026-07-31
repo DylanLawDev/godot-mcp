@@ -363,3 +363,49 @@ func test_step_frames_blank_dir_is_fatal() -> void:
 	eng.set_root(root)
 	assert_false(eng.execute({"type": "step_frames", "count": 1, "dir": "  "})["ok"])
 	root.free()
+
+# --- capture_texture step (texture readback) ---
+
+func test_capture_texture_writes_png_from_image_texture() -> void:
+	var root := _make_root()
+	var img := Image.create(5, 4, false, Image.FORMAT_RGBA8)
+	img.fill(Color.YELLOW)
+	var sprite := Sprite2D.new()
+	sprite.name = "Pic"
+	sprite.texture = ImageTexture.create_from_image(img)
+	root.add_child(sprite)
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var out := "user://_engine_tex_test/pic.png"
+	var res := eng.execute({"type": "capture_texture", "path": "Pic", "property": "texture", "out": out})
+	assert_true(res["ok"])
+	assert_has(res["detail"], "5x4")
+	assert_true(FileAccess.file_exists(out))
+	DirAccess.remove_absolute(out)
+	DirAccess.remove_absolute("user://_engine_tex_test")
+	root.free()
+
+func test_capture_texture_missing_node_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_texture", "path": "Ghost", "out": "user://x.png"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_capture_texture_bad_property_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_texture", "path": "Sub", "property": "position", "out": "user://x.png"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_capture_texture_missing_out_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_false(eng.execute({"type": "capture_texture", "path": "Sub", "property": "position"})["ok"])
+	root.free()

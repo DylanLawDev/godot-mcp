@@ -81,28 +81,30 @@ func _main(scenario_path: String, out_path: String) -> void:
 	for step in steps:
 		var res: Dictionary = eng.execute(step)
 		if res.has("capture_frames"):
-			# Burst capture: pump RENDER frames (process_frame follows a draw;
-			# physics_frame does not) and grab the viewport after each one.
+			# Burst capture: pump RENDER frames and grab the viewport only after
+			# each draw completes (see _await_drawn_frame), so every PNG in the
+			# burst is a frame rendered after this step ran.
 			var cap = eng.capture_for(str(res["capture_dir"]))
 			for _i in int(res["capture_frames"]):
-				await process_frame
+				await _await_drawn_frame()
 				frames_run += 1
 				cap.capture(root)
 		elif res.has("step_frames"):
-			# Frame stepping: each unpause -> await process_frame -> re-pause
-			# advances node processing by exactly one rendered frame (the
-			# process_frame signal fires before that iteration's _process, so
-			# re-pausing on resume skips the NEXT frame, not the stepped one).
-			# First align to a process_frame boundary while paused: resuming
+			# Frame stepping: each unpause -> await drawn frame -> re-pause
+			# advances node processing by exactly one rendered frame.
+			# The paused alignment await matters for the headless/process_frame
+			# path: that signal fires before its iteration's _process, so
+			# re-pausing on resume skips the NEXT frame, not the stepped one —
+			# but only if we entered the pattern on a frame boundary (resuming
 			# from a physics_frame wait leaves us mid-iteration, where the
-			# pattern's first await would span no process phase at all.
+			# pattern's first await would span no process phase at all).
 			var step_cap = eng.capture_for(str(res.get("capture_dir", "")))
 			paused = true
-			await process_frame
+			await _await_drawn_frame()
 			frames_run += 1
 			for _i in int(res["step_frames"]):
 				paused = false
-				await process_frame
+				await _await_drawn_frame()
 				paused = true
 				frames_run += 1
 				if step_cap != null:
@@ -129,6 +131,18 @@ func _main(scenario_path: String, out_path: String) -> void:
 		quit(2)
 		return
 	quit(0 if out.get("passed", false) else 1)
+
+# Resume after the next frame is fully drawn. Windowed, that is
+# RenderingServer.frame_post_draw — resuming there guarantees the framebuffer
+# holds the frame produced by the processing that just ran, so captures are
+# never one frame stale. That signal never fires on the headless display
+# server (nothing draws), so fall back to process_frame there: capture()
+# records per-frame errors headless anyway, and the frame pacing stays alive.
+func _await_drawn_frame() -> void:
+	if DisplayServer.get_name() == "headless":
+		await process_frame
+	else:
+		await RenderingServer.frame_post_draw
 
 func _load_scenario(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):

@@ -409,3 +409,23 @@ func test_capture_texture_missing_out_is_fatal() -> void:
 	eng.set_root(root)
 	assert_false(eng.execute({"type": "capture_texture", "path": "Sub", "property": "position"})["ok"])
 	root.free()
+
+func test_capture_frames_reused_dir_applies_explicit_downscale() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 2})
+	var cap = eng.capture_for("user://_engine_capture_ds")
+	assert_eq(cap.downscale, 2)
+	# Omitted downscale keeps the earlier choice...
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds"})
+	assert_eq(cap.downscale, 2, "omitted downscale must not reset a reused dir")
+	# ...while an explicit one applies to the remaining frames (same sequence).
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 4})
+	assert_eq(cap.downscale, 4)
+	assert_eq(eng.capture_for("user://_engine_capture_ds"), cap, "reuse must keep one sequence")
+	# step_frames shares the same rule.
+	eng.execute({"type": "step_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 3})
+	assert_eq(cap.downscale, 3)
+	DirAccess.remove_absolute("user://_engine_capture_ds")
+	root.free()

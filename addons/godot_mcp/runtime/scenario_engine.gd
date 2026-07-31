@@ -199,7 +199,7 @@ func _capture_frames(step: Dictionary) -> Dictionary:
 	var dir := str(step.get("dir", ""))
 	if dir.strip_edges() == "":
 		return _step_fail("capture_frames", "'dir' is required")
-	var prep := _prepare_capture(dir, int(step.get("downscale", 1)))
+	var prep := _prepare_capture(dir, step)
 	if not prep["ok"]:
 		return _step_fail("capture_frames", prep["error"])
 	var out := _step_ok("capture_frames", "count=%d dir=%s" % [count, dir])
@@ -208,11 +208,17 @@ func _capture_frames(step: Dictionary) -> Dictionary:
 	return out
 
 # Get-or-create the FrameCapture for a dir (one numbering sequence per dir).
-func _prepare_capture(dir: String, downscale: int) -> Dictionary:
-	if _captures.has(dir):
+# A reused dir keeps its numbering AND its downscale — unless the new step
+# explicitly specifies "downscale", which is applied to the remaining frames
+# (an omitted key never silently resets an earlier choice).
+func _prepare_capture(dir: String, step: Dictionary) -> Dictionary:
+	var existing: FrameCapture = _captures.get(dir)
+	if existing != null:
+		if step.has("downscale"):
+			existing.downscale = max(1, int(step.get("downscale", 1)))
 		return {"ok": true, "error": ""}
 	var cap := FrameCapture.new()
-	var conf := cap.configure(dir, downscale)
+	var conf := cap.configure(dir, int(step.get("downscale", 1)))
 	if conf["ok"]:
 		_captures[dir] = cap
 	return conf
@@ -239,7 +245,7 @@ func _step_frames(step: Dictionary) -> Dictionary:
 	if step.has("dir") and dir.strip_edges() == "":
 		return _step_fail("step_frames", "'dir' must not be blank")
 	if dir != "":
-		var prep := _prepare_capture(dir, int(step.get("downscale", 1)))
+		var prep := _prepare_capture(dir, step)
 		if not prep["ok"]:
 			return _step_fail("step_frames", prep["error"])
 	var out := _step_ok("step_frames", "count=%d%s" % [count, "" if dir == "" else " dir=" + dir])

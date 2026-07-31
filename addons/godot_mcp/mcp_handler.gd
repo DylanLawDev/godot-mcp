@@ -169,6 +169,9 @@ func _build_default_registry(project = null, scene = null):
 	reg.register("save_scene", "Save the currently open scene. Without {path}: saves in-place via the editor. With {path} (.tscn): packs a variant copy without touching the live scene; refuses to clobber an existing file unless overwrite=true. Args: {path?, overwrite?}.",
 		{"type": "object", "properties": {"path": {"type": "string"}, "overwrite": {"type": "boolean"}}},
 		Callable(scene, "save_scene"))
+	reg.register("capture_texture", "Read back a texture from the edited scene as PNG: a SubViewport's render target (omit property) or any Texture2D property. Args: {path, property?, out_path?} (PNG to res:// path, else base64).",
+		{"type": "object", "properties": {"path": {"type": "string"}, "property": {"type": "string"}, "out_path": {"type": "string"}}, "required": ["path"]},
+		Callable(scene, "capture_texture"))
 	var editor = EditorTools.new()
 	reg.register("get_output_log", "Get captured editor log entries. Args: {limit?, errors_only?}.",
 		{"type": "object", "properties": {"limit": {"type": "integer"}, "errors_only": {"type": "boolean"}}},

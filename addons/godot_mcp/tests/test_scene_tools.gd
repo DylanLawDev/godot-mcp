@@ -727,3 +727,7 @@ func test_save_scene_non_tscn_path_rejected() -> void:
 	var r: Dictionary = st.save_scene({"path": "res://output.gd"})
 	assert_false(r["ok"])
 	assert_true(r["error"].contains(".tscn"), "Unexpected error: " + r["error"])
+
+func test_capture_texture_no_scene_open() -> void:
+	var st = SceneTools.new()
+	assert_false(st.capture_texture({"path": "."})["ok"])

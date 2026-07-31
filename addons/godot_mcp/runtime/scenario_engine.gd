@@ -11,6 +11,7 @@ extends RefCounted
 
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
 const InputSynth = preload("res://addons/godot_mcp/runtime/input_synth.gd")
+const TextureDump = preload("res://addons/godot_mcp/utils/texture_dump.gd")
 
 # Counts a signal's emissions regardless of how many args it carries.
 class SignalCounter extends RefCounted:
@@ -56,6 +57,8 @@ func execute(step: Dictionary) -> Dictionary:
 			return _call_method(step)
 		"watch_signal":
 			return _watch_signal(step)
+		"capture_texture":
+			return _capture_texture(step)
 		"assert":
 			return _assert(step)
 		_:
@@ -214,6 +217,22 @@ func _call_method(step: Dictionary) -> Dictionary:
 			call_args.append(str_to_var(str(a)))
 	var ret = node.callv(method, call_args)
 	return _step_ok("call_method", "%s -> %s" % [method, var_to_str(ret)])
+
+# Reads back a texture reachable from a live node — a SubViewport's render
+# target (empty "property") or any Texture2D-holding property path — and saves
+# it as a PNG at "out". Failure is fatal: an explicitly requested readback that
+# produces nothing means the run's premise is broken. GPU-backed textures
+# (ViewportTexture) need the windowed --render mode; CPU textures (ImageTexture)
+# work headless too. Logic lives in utils/texture_dump.gd, shared with the
+# editor's capture_texture MCP tool.
+func _capture_texture(step: Dictionary) -> Dictionary:
+	var node := NodeOps.resolve(root, str(step.get("path", "")))
+	if node == null:
+		return _step_fail("capture_texture", "Node not found: " + str(step.get("path", "")))
+	var res := TextureDump.dump_to_png(node, str(step.get("property", "")), str(step.get("out", "")))
+	if not res["ok"]:
+		return _step_fail("capture_texture", res["error"])
+	return _step_ok("capture_texture", "%s (%dx%d)" % [res["path"], res["width"], res["height"]])
 
 func _watch_signal(step: Dictionary) -> Dictionary:
 	var node := NodeOps.resolve(root, str(step.get("path", "")))

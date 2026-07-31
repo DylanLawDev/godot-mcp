@@ -199,9 +199,9 @@ past x=100, and that `reached_goal` fired once.
 
 Step types: `wait_frames`, `wait_seconds`, `input_action` (modes `press`/`release`/`tap`/
 `hold` — `hold` takes `frames` or `seconds` and auto-releases), `input_event`,
-`set_property`, `create_node`, `delete_node`, `call_method`, `watch_signal`, and
-`assert` (kinds `property`, `node_exists`, `node_absent`, `in_group`, `signal_count`;
-ops `eq`/`ne`/`lt`/`le`/`gt`/`ge`).
+`set_property`, `create_node`, `delete_node`, `call_method`, `watch_signal`,
+`capture_texture`, and `assert` (kinds `property`, `node_exists`, `node_absent`,
+`in_group`, `signal_count`; ops `eq`/`ne`/`lt`/`le`/`gt`/`ge`).
 
 `input_action` is poll-observable (`Input.is_action_pressed`) and does not fire
 `_input`/`_unhandled_input`. For that, use `input_event`, which synthesizes a raw
@@ -226,4 +226,38 @@ and exit 0:
 
 ```bash
 addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/input_events.json /tmp/input_events.json
+```
+
+### Texture readback
+
+`capture_texture` (`{"type": "capture_texture", "path": "View", "property": "",
+"out": "user://captures/subviewport.png"}`) dumps a texture reachable from a
+live node to a PNG: with no `property` the node must be a SubViewport (its
+render target is read); otherwise `property` is a `get_indexed` path
+("texture", "material:albedo_texture") holding a `Texture2D`. A failed readback
+is fatal to the run.
+
+CPU-side textures (`ImageTexture`) work headless; GPU-backed ones (a
+SubViewport's `ViewportTexture`) render nothing headless and need a windowed
+run (drop `--headless`; a game window opens briefly):
+
+```bash
+# CPU texture — headless, exits 0:
+addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/texture_readback.json /tmp/tex.json
+
+# SubViewport render target — headless this FAILS with a clear fatal error;
+# windowed it exits 0 and writes user://captures/subviewport.png (64x48, the
+# fixture's red ColorRect):
+godot4 --path . --script addons/godot_mcp/runtime/scenario_runner.gd \
+  -- --scenario examples/scenarios/texture_readback_subviewport.json --out /tmp/tex.json
+```
+
+The same readback is available in the editor as the `capture_texture` MCP tool
+(`{path, property?, out_path?}` — PNG to a `res://` path, else base64), e.g.
+against an open scene containing a SubViewport named `View`:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"capture_texture","arguments":{"path":"View","out_path":"examples/scratch/view.png"}}}'
+
 ```

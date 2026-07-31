@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **39 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **40 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -105,6 +105,7 @@ as an editor undo/redo step, so `Ctrl+Z` works exactly as you'd expect.**
 | `rename_node` | Rename a node. |
 | `create_scene` | Create a new scene. |
 | `save_scene` | Save the current scene to disk. |
+| `capture_texture` | Read back a SubViewport's render target or any `Texture2D` property as a PNG (file or base64). *GPU-backed textures need a windowed editor.* |
 
 ### 🔌 Signals, groups & resources
 
@@ -176,6 +177,8 @@ A scenario is a JSON list of steps. Available step types:
 - `create_node` / `delete_node` — manipulate the running tree
 - `call_method` — call a method on a node
 - `watch_signal` — record signal emissions
+- `capture_texture` — dump a SubViewport render target or any `Texture2D`
+  property of a live node to a PNG
 - `assert` — check a condition and pass/fail the run
 
 This runs separately from the editor (it's launched via the shell, not over

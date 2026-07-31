@@ -1,0 +1,8 @@
+{
+  "scene": "res://examples/scenes/texture_readback_demo.tscn",
+  "steps": [
+    { "type": "wait_frames", "count": 2 },
+    { "type": "capture_texture", "path": ".", "property": "cpu_tex", "out": "user://captures/cpu_tex.png" },
+    { "type": "assert", "kind": "node_exists", "path": "View" }
+  ]
+}

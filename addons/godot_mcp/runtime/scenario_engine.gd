@@ -10,6 +10,7 @@ extends RefCounted
 # records passed:false and the run continues.
 
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
+const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const TextureDump = preload("res://addons/godot_mcp/utils/texture_dump.gd")
 
 # Counts a signal's emissions regardless of how many args it carries.
@@ -23,10 +24,25 @@ var _index := 0
 var _steps: Array = []
 var _assertions: Array = []
 var _signal_counters: Dictionary = {}   # "path::signal" -> SignalCounter
+var _captures: Dictionary = {}          # capture dir -> FrameCapture
 var _fatal := ""
 
 func set_root(node: Node) -> void:
 	root = node
+
+# The SceneTree whose pause flag set_paused flips. The runner injects itself;
+# without an injection we fall back to the registered main loop (null while a
+# SceneTree script is still in _init — which is where the unit suite runs).
+var _tree: SceneTree = null
+
+func set_tree(tree: SceneTree) -> void:
+	_tree = tree
+
+func _scene_tree() -> SceneTree:
+	if _tree != null:
+		return _tree
+	var ml := Engine.get_main_loop()
+	return ml as SceneTree if ml is SceneTree else null
 
 func execute(step: Dictionary) -> Dictionary:
 	var type := str(step.get("type", ""))
@@ -54,6 +70,12 @@ func execute(step: Dictionary) -> Dictionary:
 			return _call_method(step)
 		"watch_signal":
 			return _watch_signal(step)
+		"capture_frames":
+			return _capture_frames(step)
+		"set_paused":
+			return _set_paused(step)
+		"step_frames":
+			return _step_frames(step)
 		"capture_texture":
 			return _capture_texture(step)
 		"assert":
@@ -165,6 +187,76 @@ func _call_method(step: Dictionary) -> Dictionary:
 	var ret = node.callv(method, call_args)
 	return _step_ok("call_method", "%s -> %s" % [method, var_to_str(ret)])
 
+# Registers a burst capture: the runner pumps `count` RENDER frames (awaiting
+# process_frame, not physics_frame, so each grab follows a fresh draw) and calls
+# capture_for(dir).capture(viewport) after each. The engine only validates and
+# prepares the destination — it never touches the viewport, staying
+# frame-agnostic and unit-testable.
+func _capture_frames(step: Dictionary) -> Dictionary:
+	var count := int(step.get("count", 1))
+	if count < 1:
+		return _step_fail("capture_frames", "'count' must be >= 1")
+	var dir := str(step.get("dir", ""))
+	if dir.strip_edges() == "":
+		return _step_fail("capture_frames", "'dir' is required")
+	var prep := _prepare_capture(dir, step)
+	if not prep["ok"]:
+		return _step_fail("capture_frames", prep["error"])
+	var out := _step_ok("capture_frames", "count=%d dir=%s" % [count, dir])
+	out["capture_frames"] = count
+	out["capture_dir"] = dir
+	return out
+
+# Get-or-create the FrameCapture for a dir (one numbering sequence per dir).
+# A reused dir keeps its numbering AND its downscale — unless the new step
+# explicitly specifies "downscale", which is applied to the remaining frames
+# (an omitted key never silently resets an earlier choice).
+func _prepare_capture(dir: String, step: Dictionary) -> Dictionary:
+	var existing: FrameCapture = _captures.get(dir)
+	if existing != null:
+		if step.has("downscale"):
+			existing.downscale = max(1, int(step.get("downscale", 1)))
+		return {"ok": true, "error": ""}
+	var cap := FrameCapture.new()
+	var conf := cap.configure(dir, int(step.get("downscale", 1)))
+	if conf["ok"]:
+		_captures[dir] = cap
+	return conf
+
+# Pauses/unpauses the whole tree (SceneTree.paused): _process/_physics_process
+# stop for every node not opting out via process_mode.
+func _set_paused(step: Dictionary) -> Dictionary:
+	var tree := _scene_tree()
+	if tree == null:
+		return _step_fail("set_paused", "No SceneTree to pause")
+	var p := bool(step.get("paused", true))
+	tree.paused = p
+	return _step_ok("set_paused", "paused=" + str(p))
+
+# Frame stepping: the runner advances the tree exactly `count` frames, one at a
+# time (unpause -> await one process_frame -> re-pause; verified to run _process
+# exactly once per step), capturing after each if "dir" is given. The tree is
+# left PAUSED afterward regardless of its prior state — resume with set_paused.
+func _step_frames(step: Dictionary) -> Dictionary:
+	var count := int(step.get("count", 1))
+	if count < 1:
+		return _step_fail("step_frames", "'count' must be >= 1")
+	var dir := str(step.get("dir", ""))
+	if step.has("dir") and dir.strip_edges() == "":
+		return _step_fail("step_frames", "'dir' must not be blank")
+	if dir != "":
+		var prep := _prepare_capture(dir, step)
+		if not prep["ok"]:
+			return _step_fail("step_frames", prep["error"])
+	var out := _step_ok("step_frames", "count=%d%s" % [count, "" if dir == "" else " dir=" + dir])
+	out["step_frames"] = count
+	if dir != "":
+		out["capture_dir"] = dir
+	return out
+
+# The runner's handle to a prepared capture destination.
+func capture_for(dir: String) -> FrameCapture:
+	return _captures.get(dir)
 # Reads back a texture reachable from a live node — a SubViewport's render
 # target (empty "property") or any Texture2D-holding property path — and saves
 # it as a PNG at "out". Failure is fatal: an explicitly requested readback that
@@ -295,10 +387,16 @@ func results() -> Dictionary:
 	for a in _assertions:
 		if not a.get("passed", false):
 			any_fail = true
-	return {
+	var out := {
 		"ok": _fatal == "",
 		"passed": _fatal == "" and not any_fail,
 		"fatal": _fatal,
 		"steps": _steps,
 		"assertions": _assertions,
 	}
+	if not _captures.is_empty():
+		var manifests := []
+		for dir in _captures:
+			manifests.append(_captures[dir].manifest())
+		out["captures"] = manifests
+	return out

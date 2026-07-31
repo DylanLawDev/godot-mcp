@@ -67,4 +67,10 @@ lets Claude launch a separate `--headless` Godot process that runs a real scene,
 with input-map actions, and manipulates/inspects live runtime nodes, emitting a pass/fail
 results JSON. It is launched via Bash (`runtime/run_scenario.sh`), not over MCP, and shares
 node-manipulation logic with the editor tools through `utils/node_ops.gd`. Action input is
-poll-observable only; raw `InputEvent` synthesis and screenshots are deferred (v2).
+poll-observable only; raw `InputEvent` synthesis is deferred (v2). The `capture_frames`
+step (`runtime/frame_capture.gd`) saves consecutive rendered frames as PNGs; it needs the
+windowed `--render` mode of `run_scenario.sh` (headless renders nothing and records
+per-frame manifest errors instead). `set_paused`/`step_frames` pause the tree and advance
+exactly one rendered frame per step (the runner aligns to a `process_frame` boundary while
+paused, then unpauses across exactly one process phase per step — don't "simplify" that
+loop), optionally capturing after each step.

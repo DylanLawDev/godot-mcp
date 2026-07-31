@@ -199,10 +199,62 @@ past x=100, and that `reached_goal` fired once.
 
 Step types: `wait_frames`, `wait_seconds`, `input_action` (modes `press`/`release`/`tap`),
 `set_property`, `create_node`, `delete_node`, `call_method`, `watch_signal`,
-`capture_texture`, and `assert` (kinds `property`, `node_exists`, `node_absent`,
-`in_group`, `signal_count`; ops `eq`/`ne`/`lt`/`le`/`gt`/`ge`). Input is action-based
+`capture_frames`, `set_paused`, `step_frames`, `capture_texture`, and `assert`
+(kinds `property`, `node_exists`, `node_absent`, `in_group`, `signal_count`; ops
+`eq`/`ne`/`lt`/`le`/`gt`/`ge`). Input is action-based
 (project input map) and poll-observable (`Input.is_action_pressed`); it does not fire
 `_input`/`_unhandled_input`.
+
+### Burst frame capture
+
+`capture_frames` (`{"type": "capture_frames", "count": 10, "dir": "user://captures/burst",
+"downscale": 2}`) pumps `count` render frames and saves each as
+`<dir>/frame_0000.png`, `frame_0001.png`, ... The results JSON gains a `captures`
+array with one manifest per output dir (`captured`, `errors`, and per-frame
+entries with file/width/height). Repeating the step with the same `dir`
+continues the same numbering.
+
+A `--headless` process renders nothing, so every frame records a manifest error
+instead of a file. Use the runner's windowed mode for real pixels (a game window
+opens briefly):
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh --render examples/scenarios/burst_capture.json /tmp/burst.json
+```
+
+Expected: exit 0, `captures[0].captured == 10`, `errors == 0`, and ten numbered
+PNGs in the user-data dir (`user://captures/burst` →
+`~/.local/share/godot/app_userdata/<project>/captures/burst` on Linux). The same
+command without `--render` still exits 0 but reports
+`captured: 0, errors: 10` — capture problems are diagnosable from the manifest,
+never fatal to the run.
+
+### Frame stepping
+
+`set_paused` (`{"type": "set_paused", "paused": true}`) flips `SceneTree.paused`
+for the whole game. `step_frames` (`{"type": "step_frames", "count": 3,
+"dir": "user://captures/steps", "downscale": 1}`) then advances node processing
+by **exactly** `count` rendered frames — one `_process` call per step — and, if
+`dir` is given, saves a PNG after each stepped frame (same manifest/numbering
+rules as `capture_frames`, including the headless-records-errors behavior; a
+`dir` shared between the two step types continues one numbering sequence). The
+tree is left paused afterward regardless of its prior state; resume with
+`set_paused: false`.
+
+`examples/scenarios/frame_step.json` proves the exactness: it pauses, verifies
+5 waited frames advance `_process` zero times, steps 3 + 1 frames and asserts
+the fixture's `process_ticks` hit exactly 3 then 4, then unpauses. Run it both
+ways and expect exit 0:
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh          examples/scenarios/frame_step.json /tmp/steps.json
+addons/godot_mcp/runtime/run_scenario.sh --render examples/scenarios/frame_step.json /tmp/steps.json
+```
+
+The `--render` run additionally leaves the stepped frames as
+`user://captures/steps/frame_0000.png` … `frame_0003.png` — frame-by-frame
+diffs of consecutive stepped captures are the definitive check that a temporal
+artifact (jitter, sawtooth) is gone.
 
 ### Texture readback
 

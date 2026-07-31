@@ -79,7 +79,15 @@ func _main(scenario_path: String, out_path: String) -> void:
 	var frames_run := 0
 	for step in steps:
 		var res: Dictionary = eng.execute(step)
-		if res.has("frames"):
+		if res.has("capture_frames"):
+			# Burst capture: pump RENDER frames (process_frame follows a draw;
+			# physics_frame does not) and grab the viewport after each one.
+			var cap = eng.capture_for(str(res["capture_dir"]))
+			for _i in int(res["capture_frames"]):
+				await process_frame
+				frames_run += 1
+				cap.capture(root)
+		elif res.has("frames"):
 			for _i in int(res["frames"]):
 				await physics_frame
 				frames_run += 1

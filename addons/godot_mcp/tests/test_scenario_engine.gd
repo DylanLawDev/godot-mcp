@@ -210,3 +210,61 @@ func test_results_ok_false_on_fatal() -> void:
 	assert_false(r["ok"])
 	assert_false(r["passed"])
 	root.free()
+
+# --- capture_frames step ---
+# The engine only validates and prepares the destination; the runner owns the
+# viewport grabbing (E2E: examples/scenarios/burst_capture.json with --render).
+
+func test_capture_frames_returns_pump_plan() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_frames", "count": 5, "dir": "user://_engine_capture_test", "downscale": 2})
+	assert_true(res["ok"])
+	assert_eq(res["capture_frames"], 5)
+	assert_eq(res["capture_dir"], "user://_engine_capture_test")
+	var cap = eng.capture_for("user://_engine_capture_test")
+	assert_ne(cap, null)
+	assert_eq(cap.downscale, 2)
+	DirAccess.remove_absolute("user://_engine_capture_test")
+	root.free()
+
+func test_capture_frames_reuses_capture_per_dir() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_test2"})
+	var first = eng.capture_for("user://_engine_capture_test2")
+	eng.execute({"type": "capture_frames", "count": 3, "dir": "user://_engine_capture_test2"})
+	assert_eq(eng.capture_for("user://_engine_capture_test2"), first, "same dir must keep one frame sequence")
+	DirAccess.remove_absolute("user://_engine_capture_test2")
+	root.free()
+
+func test_capture_frames_bad_count_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_frames", "count": 0, "dir": "user://x"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_capture_frames_missing_dir_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_false(eng.execute({"type": "capture_frames", "count": 1})["ok"])
+	root.free()
+
+func test_results_include_capture_manifests() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var r0 := eng.results()
+	assert_false(r0.has("captures"), "no captures key without capture steps")
+	eng.execute({"type": "capture_frames", "count": 2, "dir": "user://_engine_capture_test3"})
+	var r := eng.results()
+	assert_eq((r["captures"] as Array).size(), 1)
+	assert_eq(r["captures"][0]["dir"], "user://_engine_capture_test3")
+	DirAccess.remove_absolute("user://_engine_capture_test3")
+	root.free()

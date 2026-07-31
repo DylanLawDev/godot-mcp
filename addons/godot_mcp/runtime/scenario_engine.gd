@@ -10,6 +10,7 @@ extends RefCounted
 # records passed:false and the run continues.
 
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
+const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 
 # Counts a signal's emissions regardless of how many args it carries.
 class SignalCounter extends RefCounted:
@@ -22,6 +23,7 @@ var _index := 0
 var _steps: Array = []
 var _assertions: Array = []
 var _signal_counters: Dictionary = {}   # "path::signal" -> SignalCounter
+var _captures: Dictionary = {}          # capture dir -> FrameCapture
 var _fatal := ""
 
 func set_root(node: Node) -> void:
@@ -53,6 +55,8 @@ func execute(step: Dictionary) -> Dictionary:
 			return _call_method(step)
 		"watch_signal":
 			return _watch_signal(step)
+		"capture_frames":
+			return _capture_frames(step)
 		"assert":
 			return _assert(step)
 		_:
@@ -161,6 +165,34 @@ func _call_method(step: Dictionary) -> Dictionary:
 			call_args.append(str_to_var(str(a)))
 	var ret = node.callv(method, call_args)
 	return _step_ok("call_method", "%s -> %s" % [method, var_to_str(ret)])
+
+# Registers a burst capture: the runner pumps `count` RENDER frames (awaiting
+# process_frame, not physics_frame, so each grab follows a fresh draw) and calls
+# capture_for(dir).capture(viewport) after each. The engine only validates and
+# prepares the destination — it never touches the viewport, staying
+# frame-agnostic and unit-testable.
+func _capture_frames(step: Dictionary) -> Dictionary:
+	var count := int(step.get("count", 1))
+	if count < 1:
+		return _step_fail("capture_frames", "'count' must be >= 1")
+	var dir := str(step.get("dir", ""))
+	if dir.strip_edges() == "":
+		return _step_fail("capture_frames", "'dir' is required")
+	var cap: FrameCapture = _captures.get(dir)
+	if cap == null:
+		cap = FrameCapture.new()
+		var conf := cap.configure(dir, int(step.get("downscale", 1)))
+		if not conf["ok"]:
+			return _step_fail("capture_frames", conf["error"])
+		_captures[dir] = cap
+	var out := _step_ok("capture_frames", "count=%d dir=%s" % [count, dir])
+	out["capture_frames"] = count
+	out["capture_dir"] = dir
+	return out
+
+# The runner's handle to a prepared capture destination.
+func capture_for(dir: String) -> FrameCapture:
+	return _captures.get(dir)
 
 func _watch_signal(step: Dictionary) -> Dictionary:
 	var node := NodeOps.resolve(root, str(step.get("path", "")))
@@ -276,10 +308,16 @@ func results() -> Dictionary:
 	for a in _assertions:
 		if not a.get("passed", false):
 			any_fail = true
-	return {
+	var out := {
 		"ok": _fatal == "",
 		"passed": _fatal == "" and not any_fail,
 		"fatal": _fatal,
 		"steps": _steps,
 		"assertions": _assertions,
 	}
+	if not _captures.is_empty():
+		var manifests := []
+		for dir in _captures:
+			manifests.append(_captures[dir].manifest())
+		out["captures"] = manifests
+	return out

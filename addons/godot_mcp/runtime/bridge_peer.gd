@@ -40,3 +40,6 @@ func get_data(count: int) -> Array:
 func disconnect_from_host() -> void:
 	_out.clear()
 	socket.disconnect_from_host()
+
+func pending_bytes() -> int:
+	return _out.size()

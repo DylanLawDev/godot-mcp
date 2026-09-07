@@ -38,15 +38,19 @@ func test_tools_list_includes_file_and_script_tools() -> void:
 		assert_has(names, expected)
 
 # Guards against registration drift: the default registry exposes exactly the
-# documented 40 tools, all with distinct names.
-func test_tools_list_exposes_all_40_distinct_tools() -> void:
+# documented editor core plus explicitly listed runtime tools, all distinct.
+func test_tools_list_exposes_all_distinct_tools() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":40,"method":"tools/list","params":{}}'))
 	var names := {}
 	for t in d["result"]["tools"]:
 		names[t["name"]] = true
-	assert_eq(d["result"]["tools"].size(), 40, "tool count drifted from 40")
-	assert_eq(names.size(), 40, "duplicate tool name registered")
+	var runtime_names := ["run_project"]
+	var expected_count := 40 + runtime_names.size()
+	assert_eq(d["result"]["tools"].size(), expected_count, "tool count drifted")
+	assert_eq(names.size(), expected_count, "duplicate tool name registered")
+	for name in runtime_names:
+		assert_has(names, name)
 
 func test_tools_call_read_file_round_trip() -> void:
 	var f := FileAccess.open("res://_mcp_handler_test.txt", FileAccess.WRITE)

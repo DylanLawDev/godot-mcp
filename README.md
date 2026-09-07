@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **40 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **41 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -266,3 +266,13 @@ See [`LICENSE`](LICENSE).
 Runtime infrastructure is documented in [RUNTIME_BRIDGE.md](docs/RUNTIME_BRIDGE.md).
 The foundation provides isolated managed sessions and nonblocking communication;
 public runtime tools are added by the follow-up implementation issues.
+
+### Managed game launch
+
+`run_project({scene?, headless=false, startup_timeout_seconds=15})` launches saved
+project content in a standalone child. Omit scene to use the configured main
+scene; `res://`, project-relative and registered `uid://` scenes are supported.
+For example, `{"scene":"res://examples/scenes/runner_demo.tscn","headless":true}`
+returns a `session_id` and `state:"starting"`. A second active run is rejected.
+Readiness and startup failures are recorded asynchronously; this does not save
+unsaved editor changes. Headless runs cannot capture rendered frames.

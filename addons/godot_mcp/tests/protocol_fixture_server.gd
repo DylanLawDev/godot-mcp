@@ -8,7 +8,7 @@ var _handler
 var _deadline_ms := 0
 
 func _initialize() -> void:
-	_handler = McpHandler.new(null, null, true)
+	_handler = McpHandler.new()
 	_server = HttpServer.new(Callable(_handler, "handle_request"))
 	if _server.start(0) != OK:
 		printerr("MCP_FIXTURE_ERROR=listen")

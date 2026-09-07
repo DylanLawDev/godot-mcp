@@ -19,7 +19,7 @@ const LEGACY_PROTOCOL_VERSION := "2025-06-18"
 const MODERN_PROTOCOL_VERSION := "2026-07-28"
 const PROTOCOL_VERSION := LEGACY_PROTOCOL_VERSION
 const SERVER_NAME := "godot-mcp"
-const SERVER_VERSION := "0.1.0"
+const SERVER_VERSION := "0.2.0"
 const META_PROTOCOL_VERSION := "io.modelcontextprotocol/protocolVersion"
 const META_CLIENT_CAPABILITIES := "io.modelcontextprotocol/clientCapabilities"
 const META_CLIENT_INFO := "io.modelcontextprotocol/clientInfo"
@@ -28,7 +28,7 @@ var _registry
 var _resources
 var _modern_enabled: bool
 
-func _init(registry = null, resources = null, modern_enabled := false) -> void:
+func _init(registry = null, resources = null, modern_enabled := true) -> void:
 	var project = ProjectTools.new()
 	var scene = SceneTools.new()
 	_registry = registry if registry != null else _build_default_registry(project, scene)

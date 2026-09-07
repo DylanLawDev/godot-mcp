@@ -119,11 +119,10 @@ func _modern_request(id, method: String, extra_params := {}, version := "2026-07
 	}
 	return JSON.stringify({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 
-func test_modern_support_is_disabled_by_default() -> void:
+func test_modern_support_is_enabled_by_default() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message(_modern_request(50, "server/discover")))
-	assert_eq(d["error"]["code"], -32022)
-	assert_eq(d["error"]["data"]["supported"], [McpHandler.LEGACY_PROTOCOL_VERSION])
+	assert_eq(d["result"]["supportedVersions"], [McpHandler.LEGACY_PROTOCOL_VERSION, McpHandler.MODERN_PROTOCOL_VERSION])
 
 func test_modern_discovery_reports_exact_supported_profile_when_enabled() -> void:
 	var h = McpHandler.new(null, null, true)

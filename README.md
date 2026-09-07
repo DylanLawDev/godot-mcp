@@ -17,14 +17,15 @@ one addon into your project, enable it, and the editor itself becomes the server
 ### 1. Install the plugin
 
 Copy the `addons/godot_mcp/` folder from this repo into your Godot project's
-`addons/` directory, then enable it:
+`addons/` directory, save any open work, and restart Godot so the new scripts
+are loaded. Then enable it:
 
 > **Project → Project Settings → Plugins → Godot MCP → Enable**
 
 That's it — no other dependencies. The moment the plugin is enabled, the editor
 starts hosting an MCP server on `127.0.0.1:8765`.
 
-> Targets **Godot 4.6.x**.
+> Tested on **Godot 4.6.1 and 4.7.1**.
 
 ### 2. Connect your AI agent
 
@@ -46,6 +47,31 @@ Or add it to a project-scoped `.mcp.json`:
 
 There is no `"command"` field — your agent only ever *connects* to the running
 editor; it never launches a process.
+
+After installing an update, restart Godot and reconnect or restart the MCP
+client. A server entry being configured, the plugin being enabled, and the
+client successfully loading the tool catalog are three separate states; confirm
+the editor Output line and that your client shows all 56 tools.
+
+### Protocol compatibility
+
+Version 0.2.0 supports legacy MCP `2025-06-18` and modern MCP `2026-07-28` on
+the same stateless endpoint. Legacy clients use `initialize`; modern clients
+call methods directly and include request `_meta`, `MCP-Protocol-Version`,
+`Mcp-Method`, and (for `tools/call` or `resources/read`) `Mcp-Name` on every
+request. `server/discover` reports exactly these verified versions and the
+tools/resources capabilities.
+
+Modern catalog and resource results use private, zero-TTL cache hints so live
+editor state is immediately stale. Native clients may omit `Origin`; a present
+Origin must exactly match `http://127.0.0.1:<port>` or
+`http://localhost:<port>`. The loopback server does not implement authentication
+or OAuth and must not be exposed remotely.
+
+Supported server features are tools and resources. Subscriptions,
+server-to-client multi-round-trip workflows, prompts, tasks, sampling, and OAuth
+are not implemented or advertised. See [the protocol architecture](docs/MCP_PROTOCOL.md)
+and [copyable E2E requests](docs/E2E_TESTING.md).
 
 ### 3. Start building
 

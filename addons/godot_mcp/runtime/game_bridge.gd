@@ -62,7 +62,7 @@ func _process(_delta: float) -> void:
 	if Time.get_ticks_msec() - _heartbeat >= 1000:
 		_send({"kind": "heartbeat"})
 		_heartbeat = Time.get_ticks_msec()
-	var errors: Dictionary = logger.entries_since(_error_cursor, 100, true)
+	var errors: Dictionary = fit_error_batch(logger.entries_since(_error_cursor, 100, true))
 	if not errors.entries.is_empty() or errors.truncated:
 		if _send({"kind": "errors", "batch": errors}):
 			_error_cursor = errors.next_sequence
@@ -128,3 +128,22 @@ func _cleanup() -> void:
 func _exit_tree() -> void:
 	_cleanup()
 	_peer.disconnect_from_host()
+
+# At most 100 x 64 KiB entries, safely below the 16 MiB wire envelope.
+# A giant diagnostic cannot permanently block every subsequent error.
+static func fit_error_batch(batch: Dictionary) -> Dictionary:
+	var result := batch.duplicate(true)
+	for index in result.entries.size():
+		var entry: Dictionary = result.entries[index]
+		if JSON.stringify(entry).to_utf8_buffer().size() <= 64 * 1024:
+			continue
+		var reduced := {"truncated": true, "backtraces": []}
+		for key in ["sequence", "timestamp_msec", "line", "error_type", "error"]:
+			if entry.has(key):
+				reduced[key] = entry[key]
+		for key in ["type", "text", "message", "rationale", "file", "function"]:
+			if entry.has(key):
+				reduced[key] = str(entry[key]).left(2048)
+		result.entries[index] = reduced
+		result.truncated = true
+	return result

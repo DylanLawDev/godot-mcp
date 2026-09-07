@@ -184,6 +184,44 @@ func test_unidentified_error_id_follows_announced_protocol_era() -> void:
 	assert_eq(modern["status"], 400)
 	assert_false(_parse(modern["body"]).has("id"))
 
+func test_all_modern_success_results_have_result_type_and_server_identity() -> void:
+	var h = McpHandler.new(null, null, true)
+	var cases := [
+		["server/discover", {}],
+		["tools/list", {}],
+		["tools/call", {"name": "get_project_info", "arguments": {}}],
+		["tools/call", {"name": "does_not_exist", "arguments": {}}],
+		["resources/list", {}],
+		["resources/read", {"uri": "godot://project/info"}],
+		["resources/templates/list", {}],
+	]
+	for case in cases:
+		var d := _parse(h.handle_message(_modern_request(60, case[0], case[1])))
+		assert_true(d.has("result"), case[0])
+		assert_eq(d["result"]["resultType"], "complete", case[0])
+		assert_eq(d["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["version"], McpHandler.SERVER_VERSION, case[0])
+
+func test_modern_cacheable_results_are_private_and_immediately_stale() -> void:
+	var h = McpHandler.new(null, null, true)
+	for method in ["server/discover", "tools/list", "resources/list", "resources/read", "resources/templates/list"]:
+		var params := {"uri": "godot://project/info"} if method == "resources/read" else {}
+		var result: Dictionary = _parse(h.handle_message(_modern_request(61, method, params)))["result"]
+		assert_eq(result["ttlMs"], 0, method)
+		assert_true(result["ttlMs"] >= 0, method)
+		assert_has(h.handle_message(_modern_request(61, method, params)), '"ttlMs":0', method)
+		assert_eq(result["cacheScope"], "private", method)
+
+func test_modern_jsonrpc_errors_are_not_decorated() -> void:
+	var h = McpHandler.new(null, null, true)
+	var d := _parse(h.handle_message(_modern_request(62, "resources/read", {"uri": "godot://missing"})))
+	assert_true(d.has("error"))
+	assert_false(d.has("result"))
+
+func test_legacy_results_are_not_decorated() -> void:
+	var h = McpHandler.new(null, null, true)
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":63,"method":"tools/list","params":{}}'))
+	assert_false(d["result"].has("resultType"))
+
 
 func test_initialize_advertises_resources_capability() -> void:
 	var h = McpHandler.new()

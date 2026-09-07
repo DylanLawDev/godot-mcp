@@ -150,6 +150,25 @@ func _handle(req: Dictionary, protocol := {"modern": false}):
 		# legacy dispatch path from a modern request.
 		if method in ["initialize", "notifications/initialized", "ping"]:
 			return JsonRpc.error(id, -32601, "Method not found: " + method)
+	var response = _dispatch_method(req)
+	if protocol["modern"] and response != null and response.has("result"):
+		response["result"] = _decorate_modern_result(response["result"], method)
+	return response
+
+func _decorate_modern_result(value, method: String) -> Dictionary:
+	var result: Dictionary = value.duplicate(true) if typeof(value) == TYPE_DICTIONARY else {"value": value}
+	result["resultType"] = "complete"
+	var metadata: Dictionary = result.get("_meta", {}).duplicate(true)
+	metadata.merge(_server_metadata(), true)
+	result["_meta"] = metadata
+	if method in ["server/discover", "tools/list", "resources/list", "resources/read", "resources/templates/list"]:
+		result["ttlMs"] = 0
+		result["cacheScope"] = "private"
+	return result
+
+func _dispatch_method(req: Dictionary):
+	var method: String = req["method"]
+	var id = req["id"]
 	match method:
 		"initialize":
 			return JsonRpc.result(id, {
@@ -175,6 +194,8 @@ func _handle(req: Dictionary, protocol := {"modern": false}):
 			return JsonRpc.result(id, result)
 		"resources/list":
 			return JsonRpc.result(id, {"resources": _resources.list_resources()})
+		"resources/templates/list":
+			return JsonRpc.result(id, {"resourceTemplates": []})
 		"resources/read":
 			var rp: Dictionary = req["params"]
 			var uri := str(rp.get("uri", ""))

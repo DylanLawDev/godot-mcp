@@ -71,7 +71,31 @@ func test_invalid_json_returns_parse_error() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message("{not json"))
 	assert_eq(d["error"]["code"], -32700)
-	assert_eq(d["id"], null)
+	assert_false(d.has("id"))
+
+func test_invalid_envelopes_return_specific_errors() -> void:
+	var h = McpHandler.new()
+	var invalid_request := _parse(h.handle_message('[1,2,3]'))
+	assert_eq(invalid_request["error"]["code"], -32600)
+	var invalid_params := _parse(h.handle_message('{"jsonrpc":"2.0","id":1,"method":"ping","params":[]}'))
+	assert_eq(invalid_params["error"]["code"], -32602)
+
+func test_client_response_is_rejected() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":"r","result":{}}'))
+	assert_eq(d["error"]["code"], -32600)
+
+func test_request_only_operation_sent_as_notification_is_not_run() -> void:
+	var h = McpHandler.new()
+	assert_eq(h.handle_message('{"jsonrpc":"2.0","method":"tools/call","params":{"name":"clear_output","arguments":{}}}'), "")
+
+func test_structured_dispatch_reports_status_and_body() -> void:
+	var h = McpHandler.new()
+	var accepted := h.handle_request('{"jsonrpc":"2.0","method":"notifications/initialized"}')
+	assert_eq(accepted["status"], 202)
+	assert_eq(accepted["body"], "")
+	var malformed := h.handle_request("not-json")
+	assert_eq(malformed["status"], 400)
 
 func test_initialize_advertises_resources_capability() -> void:
 	var h = McpHandler.new()

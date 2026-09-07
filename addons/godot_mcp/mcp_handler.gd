@@ -28,32 +28,49 @@ func _init(registry = null, resources = null) -> void:
 	_registry = registry if registry != null else _build_default_registry(project, scene)
 	_resources = resources if resources != null else _build_default_resource_registry(project, scene)
 
-# Single seam for the HTTP server AND tests.
-# Returns the serialized JSON-RPC response, or "" for notifications (server replies 202, no body).
+# Backward-compatible String adapter retained for unit tests and embedders.
+# Deferred tool results are cancelled here, exactly like the registry's
+# synchronous seam, so callers of this adapter never block.
 func handle_message(text: String) -> String:
+	var out = handle_request(text)
+	if out is ToolRegistry.Deferred:
+		out.cancel("This tool requires deferred transport dispatch")
+		out = out.value
+	return out["body"]
+
+# Body-only asynchronous adapter: a serialized String, or a Deferred that
+# resolves to one once a runtime operation completes.
+func handle_message_async(text: String) -> Variant:
+	var out = handle_request(text)
+	if out is ToolRegistry.Deferred:
+		return out.transform(func(response): return response["body"])
+	return out["body"]
+
+# Structured transport seam. Returns {status, body, content_type}, or a
+# Deferred that resolves to that shape. HTTP context is intentionally
+# request-local; no negotiated version or client metadata is stored on the
+# handler.
+func handle_request(text: String, http_context := {}) -> Variant:
 	var req := JsonRpc.parse(text)
 	if not req["ok"]:
-		return JSON.stringify(JsonRpc.error(null, -32700, "Parse error"))
+		var err := JsonRpc.error(req["id"], req["error_code"], req["error_message"], null, req["has_error_id"])
+		return _transport_response(400, err)
+	if req["message_type"] == "response":
+		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
+	if req["is_notification"] and req["method"] != "notifications/initialized":
+		return _accepted()
 	var resp = _handle(req)
 	if resp == null:
-		return ""
-	return JSON.stringify(resp)
+		return _accepted()
+	if resp is ToolRegistry.Deferred:
+		return resp.transform(func(envelope): return _transport_response(200, envelope))
+	return _transport_response(200, resp)
 
-# Production transport can retain the connection while a runtime operation completes.
-func handle_message_async(text: String) -> Variant:
-	var req := JsonRpc.parse(text)
-	if not req["ok"] or req.get("method") != "tools/call":
-		return handle_message(text)
-	if req["is_notification"]:
-		return ""
-	var params: Dictionary = req["params"]
-	var args: Variant = params.get("arguments", {})
-	if not args is Dictionary or not params.get("name", "") is String:
-		return JSON.stringify(JsonRpc.error(req.id, -32602, "Invalid tool arguments"))
-	var result: Variant = _registry.call_tool_async(params.get("name", ""), args)
-	if result is ToolRegistry.Deferred:
-		return result.transform(func(value): return JSON.stringify(JsonRpc.result(req.id, value)))
-	return JSON.stringify(JsonRpc.result(req.id, result))
+func _accepted() -> Dictionary:
+	return {"status": 202, "body": "", "content_type": "application/json"}
+
+func _transport_response(status: int, envelope: Dictionary) -> Dictionary:
+	return {"status": status, "body": JSON.stringify(envelope), "content_type": "application/json"}
 
 func _handle(req: Dictionary):
 	var method: String = req["method"]
@@ -76,7 +93,14 @@ func _handle(req: Dictionary):
 			return JsonRpc.result(id, {"tools": _registry.list_tools()})
 		"tools/call":
 			var p: Dictionary = req["params"]
-			return JsonRpc.result(id, _registry.call_tool(str(p.get("name", "")), p.get("arguments", {})))
+			var name = p.get("name")
+			var args = p.get("arguments", {})
+			if typeof(name) != TYPE_STRING or typeof(args) != TYPE_DICTIONARY:
+				return JsonRpc.error(id, -32602, "Invalid params: tools/call requires a string name and object arguments")
+			var result = _registry.call_tool_async(name, args)
+			if result is ToolRegistry.Deferred:
+				return result.transform(func(value): return JsonRpc.result(id, value))
+			return JsonRpc.result(id, result)
 		"resources/list":
 			return JsonRpc.result(id, {"resources": _resources.list_resources()})
 		"resources/read":

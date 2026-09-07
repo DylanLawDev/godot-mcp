@@ -26,6 +26,28 @@ func test_parse_invalid_json() -> void:
 func test_parse_non_object() -> void:
 	var r := JsonRpc.parse("[1,2,3]")
 	assert_false(r["ok"])
+	assert_eq(r["error_code"], -32600)
+
+func test_parse_validates_version_method_id_and_params() -> void:
+	var cases := [
+		['{"id":1,"method":"ping"}', -32600],
+		['{"jsonrpc":"1.0","id":1,"method":"ping"}', -32600],
+		['{"jsonrpc":"2.0","id":1,"method":7}', -32600],
+		['{"jsonrpc":"2.0","id":null,"method":"ping"}', -32600],
+		['{"jsonrpc":"2.0","id":1,"method":"ping","params":[]}', -32602],
+	]
+	for case in cases:
+		var parsed := JsonRpc.parse(case[0])
+		assert_false(parsed["ok"], case[0])
+		assert_eq(parsed["error_code"], case[1], case[0])
+
+func test_client_response_is_classified_separately() -> void:
+	var parsed := JsonRpc.parse('{"jsonrpc":"2.0","id":1,"result":{}}')
+	assert_true(parsed["ok"], str(parsed))
+	assert_eq(parsed["message_type"], "response")
+	var invalid_id := JsonRpc.parse('{"jsonrpc":"2.0","id":{},"result":{}}')
+	assert_false(invalid_id["ok"])
+	assert_eq(invalid_id["error_code"], -32600)
 
 func test_result_envelope() -> void:
 	var env := JsonRpc.result(5, {"a": 1})
@@ -54,3 +76,8 @@ func test_error_envelope() -> void:
 	assert_eq(env["id"], null)
 	assert_eq(env["error"]["code"], -32601)
 	assert_eq(env["error"]["message"], "Method not found")
+
+func test_error_envelope_supports_data_and_optional_id() -> void:
+	var env := JsonRpc.error(null, -32022, "Unsupported", {"supported": ["v"]}, false)
+	assert_false(env.has("id"))
+	assert_eq(env["error"]["data"]["supported"], ["v"])

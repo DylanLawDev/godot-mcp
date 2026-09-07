@@ -5,7 +5,7 @@ const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 const Http = preload("res://addons/godot_mcp/http_message.gd")
 
 var _tcp := TCPServer.new()
-var _dispatch: Callable               # (body: String) -> String  ("" => notification, 202 no body)
+var _dispatch: Callable               # (body[, context]) -> String | {status, body, content_type} | Deferred
 var _clients: Dictionary = {}         # id -> {peer: StreamPeerTCP, buf: PackedByteArray}
 var _next_id := 0
 
@@ -68,7 +68,7 @@ func _service_client(id: int) -> bool:
 	if c.has("pending"):
 		c.pending.poll()
 		if c.pending.done:
-			_send(c, Http.build_response(200, str(c.pending.value)))
+			_send_result(c, c.pending.value)
 			c.erase("pending")
 			return false
 		return false
@@ -93,15 +93,28 @@ func _respond(peer: StreamPeerTCP, parsed: Dictionary, client: Dictionary) -> bo
 	if parsed["method"] != "POST" or not str(parsed["path"]).begins_with("/mcp"):
 		_send(client, Http.build_response(405, "Method Not Allowed", "text/plain"))
 		return false
-	var out: Variant = _dispatch.call(parsed["body"])
+	var context := {
+		"headers": parsed["headers"],
+		"method": parsed["method"],
+		"path": parsed["path"],
+		"listening_port": get_port(),
+	}
+	var out = _dispatch.call(parsed["body"], context) if _dispatch.get_argument_count() >= 2 else _dispatch.call(parsed["body"])
 	if out is Deferred:
 		client["pending"] = out
 		return false
-	if out == "":
+	_send_result(client, out)
+	return false
+
+# Accepts the structured {status, body, content_type} shape, a serialized
+# response body String, or "" for an accepted notification.
+func _send_result(client: Dictionary, out: Variant) -> void:
+	if typeof(out) == TYPE_DICTIONARY:
+		_send(client, Http.build_response(int(out.get("status", 200)), str(out.get("body", "")), str(out.get("content_type", "application/json"))))
+	elif str(out) == "":
 		_send(client, Http.build_response(202, ""))
 	else:
-		_send(client, Http.build_response(200, out))
-	return false
+		_send(client, Http.build_response(200, str(out)))
 
 func _send(client: Dictionary, response_text: String) -> void:
 	client["out"] = response_text.to_utf8_buffer()

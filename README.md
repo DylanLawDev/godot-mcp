@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **51 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **52 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -348,3 +348,11 @@ capture manifests), and PNG artifact metadata. Completed assertion failures have
 passed:false; missing/malformed results and incompatible exit codes are failures.
 Large inline results are replaced with a result_path reference. Reads are cached
 after completion and do not parse files while the runner is writing them.
+
+`get_simulation_snapshot({session_id,sections?,entity_ids?})` reads an instrumented
+game's jobs, reservations, inventories, paths, power and needs at one authoritative
+tick. Example: `{"session_id":"<id>","sections":["jobs","inventories"],
+"entity_ids":["settler-1"]}`. Games must implement the optional
+[simulation adapter](docs/SIMULATION_ADAPTER.md); unavailable instrumentation is
+reported clearly. The included simulation_demo scene is a deterministic fixture,
+not an integration with an external settlement game.

@@ -156,7 +156,27 @@ func get_runtime_errors(args: Dictionary) -> Dictionary:
 		return failure("after_sequence must be nonnegative; limit must be 1–1000")
 	return runtime.errors(id, int(args.get("after_sequence", 0)), int(args.get("limit", 100)))
 
+func get_simulation_snapshot(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	var filters := {}
+	for key in ["sections", "entity_ids"]:
+		if args.has(key):
+			if not args[key] is Array or args[key].size() > (6 if key == "sections" else 1000):
+				return failure("Invalid simulation filter: " + key)
+			for value in args[key]:
+				if not value is String:
+					return failure("Simulation filters must contain strings")
+			filters[key] = args[key]
+	return runtime.request(id, "get_simulation_snapshot", filters)
+
 func register_tools(reg) -> void:
+	reg.register("get_simulation_snapshot", "Read a coherent game-instrumented simulation snapshot. Requires exactly one diagnostics adapter; unavailable sections are explicit, not fabricated.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "sections": {"type": "array", "maxItems": 6, "items": {"type": "string"}}, "entity_ids": {"type": "array", "maxItems": 1000, "items": {"type": "string"}}}, "required": ["session_id"]}, Callable(self, "get_simulation_snapshot"))
 	reg.register("get_runtime_errors", "Read retained session errors and startup stderr, with monotonic pagination and explicit truncation. Does not clear logs or query editor errors.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "after_sequence": {"type": "integer", "minimum": 0, "default": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}}, "required": ["session_id"]}, Callable(self, "get_runtime_errors"))
 	reg.register("get_runtime_properties", "Read live game node properties encoded as Godot var_to_str strings. An optional name list limits getters/payload size; path is current-scene relative.",

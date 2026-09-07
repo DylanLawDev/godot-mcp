@@ -1,9 +1,11 @@
 extends RefCounted
+const Simulation = preload("res://addons/godot_mcp/runtime/simulation_diagnostics.gd")
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
 const InputSequence = preload("res://addons/godot_mcp/runtime/input_sequence.gd")
+var simulation
 var input_sequence
 var _resize_task
 var bridge: Node
@@ -11,8 +13,10 @@ var bridge: Node
 func _init(owner: Node) -> void:
 	bridge = owner
 	input_sequence = InputSequence.new(owner)
+	simulation = Simulation.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["get_simulation_snapshot"] = Callable(simulation, "snapshot")
 	bridge.handlers["get_runtime_properties"] = Callable(self, "get_runtime_properties")
 	bridge.handlers["get_runtime_tree"] = Callable(self, "get_runtime_tree")
 	bridge.handlers["resize_game_window"] = Callable(self, "resize_game_window")

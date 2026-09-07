@@ -1,4 +1,7 @@
 extends RefCounted
+const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+var _advance_task
+var _controlled_adapter: Node
 const GROUP := "godot_mcp_simulation_adapter"
 const SECTIONS := ["jobs", "reservations", "inventories", "paths", "power", "needs"]
 var bridge: Node
@@ -87,3 +90,85 @@ static func _json_safe(value: Variant, depth: int, budget: Dictionary) -> bool:
 					return false
 			return true
 	return false
+
+func advance(args: Dictionary):
+	var task := Deferred.new(30)
+	if _advance_task != null and not _advance_task.done:
+		task.resolve({"ok": false, "error": "Another simulation advancement is running"})
+		return task
+	var count: Variant = args.get("ticks")
+	if not (typeof(count) in [TYPE_INT, TYPE_FLOAT]) or not is_finite(count) or count != floor(count) or count < 1 or count > 10000:
+		task.resolve({"ok": false, "error": "ticks must be an integer from 1 to 10000"})
+		return task
+	var selected := select_adapter(bridge.get_tree().get_nodes_in_group(GROUP))
+	if not selected.ok:
+		task.resolve(selected)
+		return task
+	var adapter: Node = selected.value
+	var initial := read_adapter(adapter, {"sections": []})
+	if not initial.ok:
+		task.resolve(initial)
+		return task
+	if not initial.value.capabilities.can_advance_ticks or not adapter.has_method("mcp_simulation_set_controlled") or not adapter.has_method("mcp_simulation_advance_tick"):
+		task.resolve({"ok": false, "error": "Simulation adapter does not support exact tick advancement"})
+		return task
+	var controlled: Variant = adapter.call("mcp_simulation_set_controlled", true)
+	if not controlled is Dictionary or not controlled.get("ok") is bool or not controlled.ok:
+		task.resolve({"ok": false, "error": "Adapter could not enter controlled simulation mode"})
+		return task
+	_controlled_adapter = adapter
+	initial = read_adapter(adapter, {"sections": []})
+	if not initial.ok:
+		task.resolve(initial)
+		return task
+	_advance_task = task
+	var progress := {"tick_before": initial.value.tick, "tick_after": initial.value.tick, "advanced_ticks": 0, "paused": true}
+	task.on_cancel = func(): _advance_failure(task, progress, "Advancement cancelled or timed out; completed ticks are not rolled back")
+	_advance_loop(task, adapter, int(count), progress)
+	return task
+
+func _advance_loop(task, adapter: Node, count: int, progress: Dictionary) -> void:
+	var slice_start := Time.get_ticks_usec()
+	for _i in count:
+		if task.done:
+			return
+		if not is_instance_valid(adapter) or not adapter.is_inside_tree():
+			_advance_failure(task, progress, "Simulation adapter left the running scene")
+			return
+		var step: Variant = adapter.call("mcp_simulation_advance_tick")
+		if not valid_tick_result(step, int(progress.tick_after) + 1):
+			# Snapshot actual progress after failure; the adapter may have mutated
+			# before returning an error. Never pretend to roll that tick back.
+			var actual := read_adapter(adapter, {"sections": []})
+			if actual.ok:
+				progress.tick_after = actual.value.tick
+				progress.advanced_ticks = progress.tick_after - progress.tick_before
+			_advance_failure(task, progress, "Adapter tick failed or did not increment by exactly one")
+			return
+		progress.tick_after = step.tick
+		progress.advanced_ticks += 1
+		if (_i + 1) % 64 == 0 or Time.get_ticks_usec() - slice_start >= 3000:
+			await bridge.get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
+	_advance_task = null
+	task.resolve({"ok": true, "value": progress})
+
+func _advance_failure(task, progress: Dictionary, message: String) -> void:
+	if _advance_task == task:
+		_advance_task = null
+	var detail := progress.duplicate(true)
+	detail["message"] = message
+	task.resolve({"ok": false, "error": JSON.stringify(detail)})
+
+func cleanup() -> void:
+	if _advance_task != null:
+		_advance_task.cancel("Runtime stopped")
+	if is_instance_valid(_controlled_adapter):
+		_controlled_adapter.call("mcp_simulation_set_controlled", false)
+	_controlled_adapter = null
+
+static func valid_tick_result(step: Variant, expected: int) -> bool:
+	if not step is Dictionary or not step.get("ok") is bool or not step.ok:
+		return false
+	var tick: Variant = step.get("tick")
+	return typeof(tick) in [TYPE_INT, TYPE_FLOAT] and is_finite(tick) and tick == expected

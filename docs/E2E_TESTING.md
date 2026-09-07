@@ -369,3 +369,6 @@ exit codes, timeout, and capture paths escaping the managed job directory.
 Launch `examples/scenes/simulation_demo.tscn` and query `get_simulation_snapshot`.
 Check stable linked settler/job/resource IDs and entity/section filters. A scene
 without the adapter must return a clear unsupported-instrumentation error.
+
+Simulation integration advances 1 then 100 authoritative ticks, waits ten ordinary
+frames, and confirms both tick and inventory remain exactly 101.

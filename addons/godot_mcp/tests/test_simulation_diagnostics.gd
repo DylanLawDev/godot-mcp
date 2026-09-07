@@ -26,3 +26,8 @@ func test_missing_ambiguous_and_unsafe_adapters() -> void:
 	assert_false(Diagnostics.json_safe(cycle))
 	cycle.clear()
 	fixture.free()
+
+func test_tick_result_requires_exact_numeric_increment() -> void:
+	assert_true(Diagnostics.valid_tick_result({"ok": true, "tick": 3}, 3))
+	for result in [{"ok": "true", "tick": 3}, {"ok": true, "tick": "3"}, {"ok": true, "tick": 4}, {"ok": false, "tick": 3}, {"ok": true, "tick": NAN}]:
+		assert_false(Diagnostics.valid_tick_result(result, 3))

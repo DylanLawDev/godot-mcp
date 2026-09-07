@@ -20,11 +20,14 @@ func launch(id: String, executable: String, arguments: PackedStringArray, kind: 
 func poll() -> void:
 	for id in _handles.keys():
 		var h: Dictionary = _handles[id]
+		# Observe exit before draining: final output may arrive during a live-to-
+		# dead transition, so a pre-exit empty read must never authorize close.
+		var exited: bool = not process_is_running.call(h.pid)
 		var stdout_empty := _drain(id, h.get("stdio"), "stdout")
 		var stderr_empty := _drain(id, h.get("stderr"), "stderr")
 		# A dead child can still have buffered pipe data. Drain it over bounded
 		# polls, retaining the handle until both pipes report empty.
-		if not process_is_running.call(h.pid) and stdout_empty and stderr_empty:
+		if exited and stdout_empty and stderr_empty:
 			var code: int = process_exit_code.call(h.pid)
 			records[id].exit_code = code if code >= 0 else null
 			records[id].state = "exited" if code == 0 else "failed"

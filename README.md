@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **43 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **44 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -288,3 +288,11 @@ after exit. A disconnected bridge does not by itself mean the game crashed.
 normal quit, then terminates the owned child if the grace period expires.
 An explicit ID prevents an old caller stopping a newer game. The response is
 deferred while other MCP clients stay responsive. Repeating a completed stop is safe.
+
+`capture_game_frame({session_id, downscale=1, format="file"})` captures the next
+rendered root viewport into a unique PNG artifact. The result includes width,
+height, original viewport_size, frame and absolute file path; `format:"base64"`
+returns PNG data instead. For example, `{"session_id":"<id>","downscale":2}`
+returns half-resolution pixels. Headless runs fail clearly; this captures the
+game rather than the editor window. Map downscaled image positions back to the
+reported original viewport_size when sending input.

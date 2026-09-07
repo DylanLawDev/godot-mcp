@@ -73,7 +73,22 @@ func stop_project(args: Dictionary) -> Variant:
 		return failure("grace_seconds must be a number from 0 to 10")
 	return runtime.stop_session(id, float(grace))
 
+func capture_game_frame(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not integer(args.get("downscale", 1), 1, 16):
+		return failure("downscale must be an integer from 1 to 16")
+	if args.get("format", "file") not in ["file", "base64"]:
+		return failure("format must be file or base64")
+	return runtime.request(id, "capture_game_frame", {"downscale": args.get("downscale", 1), "format": args.get("format", "file")})
+
 func register_tools(reg) -> void:
+	reg.register("capture_game_frame", "Capture the next rendered game viewport as PNG file or base64. Headless sessions cannot render. Coordinates refer to source viewport_size.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "downscale": {"type": "integer", "minimum": 1, "maximum": 16, "default": 1}, "format": {"type": "string", "enum": ["file", "base64"], "default": "file"}}, "required": ["session_id"]}, Callable(self, "capture_game_frame"))
 	reg.register("stop_project", "Gracefully stop a specific owned game session, terminating it after a bounded grace period if necessary. Retained stopped sessions are idempotent.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "grace_seconds": {"type": "number", "minimum": 0, "maximum": 10, "default": 2}}, "required": ["session_id"]}, Callable(self, "stop_project"))
 	reg.register("get_run_status", "Read current or retained game status without blocking. An omitted session_id selects the active then most recent session.",

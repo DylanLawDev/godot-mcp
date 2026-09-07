@@ -28,5 +28,9 @@ cat > "$fixture_dir/fixture.tscn" <<'EOF'
 [ext_resource type="Script" path="res://fixture.gd" id="1"]
 [node name="Fixture" type="Node"]
 script = ExtResource("1")
+[node name="Red" type="ColorRect" parent="."]
+offset_right = 640.0
+offset_bottom = 480.0
+color = Color(1, 0, 0, 1)
 EOF
-"${GODOT:-godot4}" --headless --path "$fixture_dir" --script addons/godot_mcp/tests/integration_runtime.gd
+"${GODOT:-godot4}" --headless --path "$fixture_dir" --script addons/godot_mcp/tests/integration_runtime.gd -- "$@"

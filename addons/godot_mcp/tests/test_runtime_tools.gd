@@ -58,3 +58,10 @@ func test_stop_validates_explicit_session_and_grace() -> void:
 	var tools := Tools.new(FakeManager.new())
 	for args in [{}, {"session_id": ""}, {"session_id": 4}, {"session_id": "a", "grace_seconds": "2"}, {"session_id": "a", "grace_seconds": -1}, {"session_id": "a", "grace_seconds": 11}]:
 		assert_false(tools.stop_project(args).ok)
+
+func test_capture_validates_frame_options() -> void:
+	var tools := Tools.new(FakeManager.new())
+	for args in [{}, {"session_id": 2}, {"session_id": "a", "downscale": 0}, {"session_id": "a", "downscale": 1.2}, {"session_id": "a", "downscale": 17}, {"session_id": "a", "format": "jpeg"}]:
+		assert_false(tools.capture_game_frame(args).ok)
+	var commands = preload("res://addons/godot_mcp/runtime/runtime_commands.gd").new(null)
+	assert_false(commands.capture_game_frame({}).value.ok)

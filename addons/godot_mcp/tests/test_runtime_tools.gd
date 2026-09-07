@@ -70,3 +70,8 @@ func test_resize_requires_bounded_integer_dimensions() -> void:
 	var tools := Tools.new(FakeManager.new())
 	for args in [{}, {"session_id": "a"}, {"session_id": "a", "width": 0, "height": 100}, {"session_id": "a", "width": 640.5, "height": 480}, {"session_id": "a", "width": 640, "height": "480"}, {"session_id": "a", "width": 640, "height": 9000}]:
 		assert_false(tools.resize_game_window(args).ok)
+
+func test_runtime_tree_limits_and_path_types() -> void:
+	var tools := Tools.new(FakeManager.new())
+	for args in [{}, {"session_id": "a", "path": 2}, {"session_id": "a", "max_depth": -1}, {"session_id": "a", "max_nodes": 0}, {"session_id": "a", "max_nodes": 10001}]:
+		assert_false(tools.get_runtime_tree(args).ok)

@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **46 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **47 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -313,3 +313,9 @@ size (64–8192 pixels per axis) and returns actual window_size, viewport_size a
 content_scale_size after a rendered frame. For example, `{"session_id":"<id>",
 "width":800,"height":600}`. OS constraints may clamp the request. Headless,
 fullscreen and embedded modes are rejected; project stretch settings are preserved.
+
+`get_runtime_tree({session_id,path=".",max_depth=8,max_nodes=1000})` inspects the
+live scene, including runtime-spawned children. It returns tree, frame and an
+explicit truncated flag. A node includes name/type/path/script/children; paths
+are relative to the current game scene. Example: `{"session_id":"<id>",
+"max_depth":2}`. This does not use the edited scene or expose bridge internals.

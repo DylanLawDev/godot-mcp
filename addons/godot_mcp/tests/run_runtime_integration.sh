@@ -28,6 +28,9 @@ func _ready():
 	print("VIEWPORT_SIZE=", get_tree().root.get_visible_rect().size)
 	get_node("Button").pressed.connect(func(): print("BUTTON_PRESSED"))
 	get_tree().paused = true
+	var spawned := Node.new()
+	spawned.name = "RuntimeOnly"
+	add_child(spawned)
 	print("PAUSED_READY")
 func _physics_process(_delta):
 	if Input.is_key_pressed(KEY_A):

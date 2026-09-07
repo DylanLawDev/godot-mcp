@@ -62,3 +62,23 @@ func test_encode_props_returns_strings() -> void:
 	assert_true(props.has("position"))
 	assert_eq(typeof(props["position"]), TYPE_STRING)
 	n.free()
+
+func test_bounded_tree_reports_depth_and_node_truncation() -> void:
+	var scene := Node.new()
+	scene.name = "Scene"
+	for i in 5:
+		var child := Node.new()
+		child.name = "Child" + str(i)
+		scene.add_child(child)
+	var ops = preload("res://addons/godot_mcp/utils/node_ops.gd")
+	var depth: Dictionary = ops.serialize_tree_bounded(scene, scene, 0, 100)
+	assert_true(depth.truncated)
+	assert_eq(depth.tree.children.size(), 0)
+	var nodes: Dictionary = ops.serialize_tree_bounded(scene, scene, 8, 3)
+	assert_true(nodes.truncated)
+	assert_eq(nodes.tree.children.size(), 2)
+	assert_eq(nodes.tree.children[0].path, "Child0")
+	var full: Dictionary = ops.serialize_tree_bounded(scene, scene, 8, 100)
+	assert_false(full.truncated)
+	assert_eq(full.tree.children.size(), 5)
+	scene.free()

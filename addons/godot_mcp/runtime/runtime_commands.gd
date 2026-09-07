@@ -1,4 +1,5 @@
 extends RefCounted
+const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
@@ -11,6 +12,7 @@ func _init(owner: Node) -> void:
 	input_sequence = InputSequence.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["get_runtime_tree"] = Callable(self, "get_runtime_tree")
 	bridge.handlers["resize_game_window"] = Callable(self, "resize_game_window")
 	bridge.handlers["send_input"] = Callable(input_sequence, "send")
 	bridge.handlers["capture_game_frame"] = Callable(self, "capture_game_frame")
@@ -82,3 +84,15 @@ func _observe_resize(task, requested: Vector2i) -> void:
 	var viewport: Window = bridge.get_tree().root
 	var visible := viewport.get_visible_rect().size
 	task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "requested_size": [requested.x, requested.y], "window_size": [viewport.size.x, viewport.size.y], "viewport_size": [visible.x, visible.y], "content_scale_size": [viewport.content_scale_size.x, viewport.content_scale_size.y]}})
+
+func get_runtime_tree(args: Dictionary) -> Dictionary:
+	var root: Node = bridge.get_tree().current_scene
+	if root == null:
+		return {"ok": false, "error": "The running game has no current scene"}
+	var node := NodeOps.resolve(root, args.get("path", "."))
+	if node == null:
+		return {"ok": false, "error": "Runtime node not found or outside current scene"}
+	var value := NodeOps.serialize_tree_bounded(node, root, int(args.get("max_depth", 8)), int(args.get("max_nodes", 1000)))
+	value["session_id"] = bridge.session_id
+	value["frame"] = Engine.get_process_frames()
+	return {"ok": true, "value": value}

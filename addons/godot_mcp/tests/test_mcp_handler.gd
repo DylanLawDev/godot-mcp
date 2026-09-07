@@ -19,6 +19,13 @@ func test_initialize_defaults_protocol_version_when_absent() -> void:
 	var d := _parse(h.handle_message('{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}'))
 	assert_eq(d["result"]["protocolVersion"], McpHandler.PROTOCOL_VERSION)
 
+func test_legacy_initialize_never_echoes_unknown_or_modern_version() -> void:
+	var h = McpHandler.new()
+	for requested in ["unknown", McpHandler.MODERN_PROTOCOL_VERSION]:
+		var body := JSON.stringify({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {"protocolVersion": requested}})
+		var d := _parse(h.handle_message(body))
+		assert_eq(d["result"]["protocolVersion"], McpHandler.LEGACY_PROTOCOL_VERSION)
+
 func test_notification_initialized_returns_empty_string() -> void:
 	var h = McpHandler.new()
 	assert_eq(h.handle_message('{"jsonrpc":"2.0","method":"notifications/initialized"}'), "")
@@ -101,6 +108,62 @@ func test_structured_dispatch_reports_status_and_body() -> void:
 	assert_eq(accepted["body"], "")
 	var malformed := h.handle_request("not-json")
 	assert_eq(malformed["status"], 400)
+
+func _modern_request(id, method: String, extra_params := {}, version := "2026-07-28") -> String:
+	var params: Dictionary = extra_params.duplicate(true)
+	params["_meta"] = {
+		"io.modelcontextprotocol/protocolVersion": version,
+		"io.modelcontextprotocol/clientCapabilities": {},
+		"io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1"},
+	}
+	return JSON.stringify({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+
+func test_modern_support_is_disabled_by_default() -> void:
+	var h = McpHandler.new()
+	var d := _parse(h.handle_message(_modern_request(50, "server/discover")))
+	assert_eq(d["error"]["code"], -32022)
+	assert_eq(d["error"]["data"]["supported"], [McpHandler.LEGACY_PROTOCOL_VERSION])
+
+func test_modern_discovery_reports_exact_supported_profile_when_enabled() -> void:
+	var h = McpHandler.new(null, null, true)
+	var d := _parse(h.handle_message(_modern_request("discover", "server/discover")))
+	var result: Dictionary = d["result"]
+	assert_eq(result["supportedVersions"], [McpHandler.LEGACY_PROTOCOL_VERSION, McpHandler.MODERN_PROTOCOL_VERSION])
+	assert_eq(result["capabilities"], {"tools": {}, "resources": {}})
+	assert_eq(result["resultType"], "complete")
+	assert_eq(result["ttlMs"], 0)
+	assert_eq(result["cacheScope"], "private")
+	assert_eq(result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "godot-mcp")
+
+func test_modern_metadata_is_required_and_validated_without_downgrade() -> void:
+	var h = McpHandler.new(null, null, true)
+	var no_meta := '{"jsonrpc":"2.0","id":50,"method":"server/discover","params":{}}'
+	assert_eq(_parse(h.handle_message(no_meta))["error"]["code"], -32602)
+	var missing_caps := '{"jsonrpc":"2.0","id":51,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}'
+	assert_eq(_parse(h.handle_message(missing_caps))["error"]["code"], -32602)
+	var malformed_info := _modern_request(52, "tools/list")
+	var body: Dictionary = JSON.parse_string(malformed_info)
+	body["params"]["_meta"]["io.modelcontextprotocol/clientInfo"] = {"name": 1, "version": "x"}
+	assert_eq(_parse(h.handle_message(JSON.stringify(body)))["error"]["code"], -32602)
+
+func test_unsupported_modern_version_has_requested_and_supported_details() -> void:
+	var h = McpHandler.new(null, null, true)
+	var d := _parse(h.handle_message(_modern_request(53, "tools/list", {}, "2099-01-01")))
+	assert_eq(d["error"]["code"], -32022)
+	assert_eq(d["error"]["data"]["requested"], "2099-01-01")
+
+func test_interleaved_modern_and_legacy_requests_do_not_share_state() -> void:
+	var h = McpHandler.new(null, null, true)
+	assert_true(_parse(h.handle_message(_modern_request(54, "tools/list"))).has("result"))
+	var legacy := _parse(h.handle_message('{"jsonrpc":"2.0","id":55,"method":"initialize","params":{"protocolVersion":"bogus"}}'))
+	assert_eq(legacy["result"]["protocolVersion"], McpHandler.LEGACY_PROTOCOL_VERSION)
+	assert_true(_parse(h.handle_message(_modern_request(56, "resources/list"))).has("result"))
+
+func test_modern_initialize_does_not_take_legacy_dispatch_path() -> void:
+	var h = McpHandler.new(null, null, true)
+	var d := _parse(h.handle_message(_modern_request(57, "initialize")))
+	assert_eq(d["error"]["code"], -32601)
+
 
 func test_initialize_advertises_resources_capability() -> void:
 	var h = McpHandler.new()

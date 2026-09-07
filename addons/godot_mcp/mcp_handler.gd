@@ -15,18 +15,25 @@ const RuntimeTools = preload("res://addons/godot_mcp/tools/runtime_tools.gd")
 const UidTools = preload("res://addons/godot_mcp/tools/uid_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
-const PROTOCOL_VERSION := "2025-06-18"
+const LEGACY_PROTOCOL_VERSION := "2025-06-18"
+const MODERN_PROTOCOL_VERSION := "2026-07-28"
+const PROTOCOL_VERSION := LEGACY_PROTOCOL_VERSION
 const SERVER_NAME := "godot-mcp"
 const SERVER_VERSION := "0.1.0"
+const META_PROTOCOL_VERSION := "io.modelcontextprotocol/protocolVersion"
+const META_CLIENT_CAPABILITIES := "io.modelcontextprotocol/clientCapabilities"
+const META_CLIENT_INFO := "io.modelcontextprotocol/clientInfo"
 
 var _registry
 var _resources
+var _modern_enabled: bool
 
-func _init(registry = null, resources = null) -> void:
+func _init(registry = null, resources = null, modern_enabled := false) -> void:
 	var project = ProjectTools.new()
 	var scene = SceneTools.new()
 	_registry = registry if registry != null else _build_default_registry(project, scene)
 	_resources = resources if resources != null else _build_default_resource_registry(project, scene)
+	_modern_enabled = modern_enabled
 
 # Backward-compatible String adapter retained for unit tests and embedders.
 # Deferred tool results are cancelled here, exactly like the registry's
@@ -60,7 +67,11 @@ func handle_request(text: String, http_context := {}) -> Variant:
 		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
 	if req["is_notification"] and req["method"] != "notifications/initialized":
 		return _accepted()
-	var resp = _handle(req)
+	var protocol := _select_protocol(req)
+	if not protocol["ok"]:
+		return _transport_response(protocol.get("status", 400), JsonRpc.error(
+			req["id"], protocol["code"], protocol["message"], protocol.get("data")))
+	var resp = _handle(req, protocol)
 	if resp == null:
 		return _accepted()
 	if resp is ToolRegistry.Deferred:
@@ -73,17 +84,66 @@ func _accepted() -> Dictionary:
 func _transport_response(status: int, envelope: Dictionary) -> Dictionary:
 	return {"status": status, "body": JSON.stringify(envelope), "content_type": "application/json"}
 
-func _handle(req: Dictionary):
+func _select_protocol(req: Dictionary) -> Dictionary:
+	if req["is_notification"]:
+		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
+	var params: Dictionary = req["params"]
+	if not params.has("_meta"):
+		if req["method"] == "server/discover":
+			return {"ok": false, "code": -32602, "message": "Invalid params: modern request metadata is required"}
+		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
+	if typeof(params["_meta"]) != TYPE_DICTIONARY:
+		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
+	var meta: Dictionary = params["_meta"]
+	if not meta.has(META_PROTOCOL_VERSION) or typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
+		return {"ok": false, "code": -32602, "message": "Invalid params: modern protocolVersion metadata is required"}
+	if not meta.has(META_CLIENT_CAPABILITIES) or typeof(meta[META_CLIENT_CAPABILITIES]) != TYPE_DICTIONARY:
+		return {"ok": false, "code": -32602, "message": "Invalid params: modern clientCapabilities metadata is required"}
+	if meta.has(META_CLIENT_INFO):
+		var client_info = meta[META_CLIENT_INFO]
+		if typeof(client_info) != TYPE_DICTIONARY or typeof(client_info.get("name")) != TYPE_STRING or typeof(client_info.get("version")) != TYPE_STRING:
+			return {"ok": false, "code": -32602, "message": "Invalid params: clientInfo requires string name and version"}
+	var requested: String = meta[META_PROTOCOL_VERSION]
+	if requested != MODERN_PROTOCOL_VERSION or not _modern_enabled:
+		return {
+			"ok": false, "status": 400, "code": -32022,
+			"message": "Unsupported protocol version: " + requested,
+			"data": {"supported": _supported_versions(), "requested": requested},
+		}
+	return {"ok": true, "modern": true, "version": requested, "client_capabilities": meta[META_CLIENT_CAPABILITIES]}
+
+func _supported_versions() -> Array:
+	var versions := [LEGACY_PROTOCOL_VERSION]
+	if _modern_enabled:
+		versions.append(MODERN_PROTOCOL_VERSION)
+	return versions
+
+func _server_capabilities() -> Dictionary:
+	return {"tools": {}, "resources": {}}
+
+func _server_metadata() -> Dictionary:
+	return {"io.modelcontextprotocol/serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION}}
+
+func _handle(req: Dictionary, protocol := {"modern": false}):
 	var method: String = req["method"]
 	var id = req["id"]
+	if protocol["modern"]:
+		if method == "server/discover":
+			return JsonRpc.result(id, {
+				"supportedVersions": _supported_versions(),
+				"capabilities": _server_capabilities(),
+				"resultType": "complete",
+				"ttlMs": 0,
+				"cacheScope": "private",
+				"_meta": _server_metadata(),
+			})
+		if method in ["initialize", "notifications/initialized"]:
+			return JsonRpc.error(id, -32601, "Method not found: " + method)
 	match method:
 		"initialize":
-			var pv = req["params"].get("protocolVersion", PROTOCOL_VERSION)
-			if typeof(pv) != TYPE_STRING:
-				pv = PROTOCOL_VERSION
 			return JsonRpc.result(id, {
-				"protocolVersion": pv,
-				"capabilities": {"tools": {}, "resources": {}},
+				"protocolVersion": LEGACY_PROTOCOL_VERSION,
+				"capabilities": _server_capabilities(),
 				"serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
 			})
 		"notifications/initialized":

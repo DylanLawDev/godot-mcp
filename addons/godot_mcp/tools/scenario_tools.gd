@@ -124,12 +124,12 @@ static func _read_completed_result(job: Dictionary) -> Dictionary:
 		value["error"] = "Malformed scenario result JSON"
 		return value
 	var result: Dictionary = json.data
-	if not result.get("passed") is bool or not result.get("steps") is Array or not result.get("assertions") is Array:
+	if not result.get("ok") is bool or not result.get("passed") is bool or not result.get("steps") is Array or not result.get("assertions") is Array:
 		value["error"] = "Invalid scenario result structure"
 		return value
 	value["result"] = result
 	var expected_code := 0 if result.passed else 1
-	if job.get("exit_code") == expected_code and result.get("ok", true):
+	if job.get("exit_code") == expected_code and result.ok:
 		value.state = "completed"
 		value.passed = result.passed
 	else:

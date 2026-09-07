@@ -117,6 +117,9 @@ func advance(args: Dictionary):
 	if not initial.value.capabilities.can_advance_ticks or not adapter.has_method("mcp_simulation_set_controlled") or not adapter.has_method("mcp_simulation_advance_tick"):
 		task.resolve({"ok": false, "error": "Simulation adapter does not support exact tick advancement"})
 		return task
+	if not safe_advance_range(int(initial.value.tick), int(count)):
+		task.resolve({"ok": false, "error": "Requested advancement exceeds the JSON-safe tick range"})
+		return task
 	var controlled: Variant = adapter.call("mcp_simulation_set_controlled", true)
 	if not controlled is Dictionary or not controlled.get("ok") is bool or not controlled.ok:
 		task.resolve({"ok": false, "error": "Adapter could not enter controlled simulation mode"})
@@ -125,6 +128,9 @@ func advance(args: Dictionary):
 	initial = read_adapter(adapter, {"sections": []})
 	if not initial.ok:
 		task.resolve(initial)
+		return task
+	if not safe_advance_range(int(initial.value.tick), int(count)):
+		task.resolve({"ok": false, "error": "Controlled tick exceeds the requested JSON-safe range"})
 		return task
 	_advance_task = task
 	var progress := {"tick_before": initial.value.tick, "tick_after": initial.value.tick, "advanced_ticks": 0, "paused": true}
@@ -176,4 +182,7 @@ static func valid_tick_result(step: Variant, expected: int) -> bool:
 	if not step is Dictionary or not step.get("ok") is bool or not step.ok:
 		return false
 	var tick: Variant = step.get("tick")
-	return typeof(tick) in [TYPE_INT, TYPE_FLOAT] and is_finite(tick) and tick == expected
+	return typeof(tick) in [TYPE_INT, TYPE_FLOAT] and is_finite(tick) and expected <= 9007199254740991 and tick == expected
+
+static func safe_advance_range(tick: int, count: int) -> bool:
+	return tick >= 0 and count > 0 and count <= 10000 and tick <= 9007199254740991 - count

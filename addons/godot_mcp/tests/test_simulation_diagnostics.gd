@@ -31,3 +31,9 @@ func test_tick_result_requires_exact_numeric_increment() -> void:
 	assert_true(Diagnostics.valid_tick_result({"ok": true, "tick": 3}, 3))
 	for result in [{"ok": "true", "tick": 3}, {"ok": true, "tick": "3"}, {"ok": true, "tick": 4}, {"ok": false, "tick": 3}, {"ok": true, "tick": NAN}]:
 		assert_false(Diagnostics.valid_tick_result(result, 3))
+
+func test_safe_tick_boundary() -> void:
+	assert_true(Diagnostics.safe_advance_range(9007199254740990, 1))
+	assert_false(Diagnostics.safe_advance_range(9007199254740990, 2))
+	assert_false(Diagnostics.safe_advance_range(9007199254740991, 1))
+	assert_false(Diagnostics.valid_tick_result({"ok": true, "tick": 9007199254740992}, 9007199254740992))

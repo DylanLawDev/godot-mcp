@@ -225,10 +225,12 @@ func shutdown() -> void:
 
 # Shared background lane for scenario/validation/export tools. Arguments are
 # constructed by trusted tool code, never an arbitrary caller-provided command.
-func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: float) -> Dictionary:
+func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: float, prepared_id: String = "") -> Dictionary:
 	if background_id != "" and jobs.active(background_id):
 		return {"ok": false, "error": "A background job is active: " + background_id}
-	var id := new_id()
+	var id := new_id() if prepared_id == "" else prepared_id
+	if id.length() != 32 or not id.is_valid_hex_number(false) or jobs.records.has(id):
+		return {"ok": false, "error": "Invalid or reused prepared job ID"}
 	if DirAccess.make_dir_recursive_absolute(artifact_dir(id)) != OK:
 		return {"ok": false, "error": "Could not create job artifact directory"}
 	var result: Dictionary = jobs.launch(id, OS.get_executable_path(), arguments, kind)

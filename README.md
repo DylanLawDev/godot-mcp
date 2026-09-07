@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **49 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **50 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -334,3 +334,10 @@ with source and possible_duplicate tags because it can also represent a structur
 logger error. Example pagination: pass the previous next_sequence as after_sequence.
 Reads do not clear logs, and completed sessions remain queryable. A source gap
 reports truncated even when the retained editor-side ring itself has not filled.
+
+`run_scenario({scenario_path,render=false,timeout_seconds=60})` exposes the existing
+scenario runner as a background job. Example: `{"scenario_path":
+"examples/scenarios/move_right.json"}` returns scenario_id, state and result_path.
+Capture paths are remapped into that run's managed directory using an execution
+copy; the source JSON is unchanged. One background scenario/build job may run at
+a time, independently of the interactive session. Poll with get_scenario_result.

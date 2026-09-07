@@ -9,6 +9,7 @@ const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
 const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
 const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
 const InputTools = preload("res://addons/godot_mcp/tools/input_tools.gd")
+const ScenarioTools = preload("res://addons/godot_mcp/tools/scenario_tools.gd")
 const RuntimeTools = preload("res://addons/godot_mcp/tools/runtime_tools.gd")
 const UidTools = preload("res://addons/godot_mcp/tools/uid_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
@@ -90,6 +91,9 @@ func _handle(req: Dictionary):
 
 func _build_default_registry(project = null, scene = null):
 	var reg = ToolRegistry.new()
+	var scenario_tools = ScenarioTools.new()
+	scenario_tools.register_tools(reg)
+	reg.set_meta("_scenario_tools", scenario_tools)
 	var runtime_tools = RuntimeTools.new()
 	runtime_tools.register_tools(reg)
 	reg.set_meta("_runtime_tools", runtime_tools)

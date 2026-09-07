@@ -69,16 +69,26 @@ func handle_request(text: String, http_context := {}) -> Variant:
 		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
 	if req["is_notification"] and req["method"] != "notifications/initialized":
 		return _accepted()
-	var protocol := _select_protocol(req)
+	var protocol := _select_protocol(req, http_context)
 	if not protocol["ok"]:
 		return _transport_response(protocol.get("status", 400), JsonRpc.error(
 			req["id"], protocol["code"], protocol["message"], protocol.get("data")))
+	if protocol["modern"] and not http_context.is_empty():
+		var header_check := _validate_modern_headers(req, protocol, http_context)
+		if not header_check["ok"]:
+			return _transport_response(400, JsonRpc.error(req["id"], -32020, header_check["message"]))
 	var resp = _handle(req, protocol)
 	if resp == null:
 		return _accepted()
 	if resp is ToolRegistry.Deferred:
-		return resp.transform(func(envelope): return _transport_response(200, envelope))
-	return _transport_response(200, resp)
+		return resp.transform(func(envelope): return _transport_response(_status_for(protocol, envelope), envelope))
+	return _transport_response(_status_for(protocol, resp), resp)
+
+# Modern requests map an unknown RPC method to HTTP 404; everything else is 200.
+func _status_for(protocol: Dictionary, envelope: Dictionary) -> int:
+	if protocol["modern"] and envelope.has("error") and envelope["error"]["code"] == -32601:
+		return 404
+	return 200
 
 func _accepted() -> Dictionary:
 	return {"status": 202, "body": "", "content_type": "application/json"}
@@ -93,7 +103,7 @@ func _is_modern_context(http_context: Dictionary) -> bool:
 # version key. Legacy requests may legitimately send `_meta` (for example a
 # `progressToken`), so the mere presence of `_meta` must not select the
 # modern path.
-func _select_protocol(req: Dictionary) -> Dictionary:
+func _select_protocol(req: Dictionary, http_context := {}) -> Dictionary:
 	if req["is_notification"]:
 		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
 	var params: Dictionary = req["params"]
@@ -101,7 +111,7 @@ func _select_protocol(req: Dictionary) -> Dictionary:
 		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
 	var meta: Dictionary = params.get("_meta", {})
 	if not meta.has(META_PROTOCOL_VERSION):
-		if req["method"] == "server/discover":
+		if req["method"] == "server/discover" or _is_modern_context(http_context):
 			return {"ok": false, "code": -32602, "message": "Invalid params: modern request metadata is required"}
 		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
 	if typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
@@ -126,6 +136,53 @@ func _supported_versions() -> Array:
 	if _modern_enabled:
 		versions.append(MODERN_PROTOCOL_VERSION)
 	return versions
+
+func _validate_modern_headers(req: Dictionary, protocol: Dictionary, http_context: Dictionary) -> Dictionary:
+	var headers: Dictionary = http_context.get("headers", {})
+	var values: Dictionary = http_context.get("header_values", {})
+	for required in ["mcp-protocol-version", "mcp-method"]:
+		if not values.has(required) or values[required].size() != 1:
+			return {"ok": false, "message": "Header mismatch: %s must appear exactly once" % required}
+	if headers.get("mcp-protocol-version", "") != protocol["version"]:
+		return {"ok": false, "message": "Header mismatch: MCP-Protocol-Version must match request metadata"}
+	if headers.get("mcp-method", "") != req["method"]:
+		return {"ok": false, "message": "Header mismatch: Mcp-Method must match request method"}
+	var expected_name = null
+	var needs_name: bool = req["method"] in ["tools/call", "resources/read"]
+	if req["method"] == "tools/call":
+		expected_name = req["params"].get("name")
+	elif req["method"] == "resources/read":
+		expected_name = req["params"].get("uri")
+	if needs_name:
+		if typeof(expected_name) != TYPE_STRING or not values.has("mcp-name") or values["mcp-name"].size() != 1:
+			return {"ok": false, "message": "Header mismatch: Mcp-Name is required"}
+		var decoded := _decode_header_value(headers["mcp-name"])
+		if not decoded["ok"] or decoded["value"] != expected_name:
+			return {"ok": false, "message": "Header mismatch: Mcp-Name does not match request params"}
+	return {"ok": true}
+
+func _decode_header_value(value: String) -> Dictionary:
+	if value.begins_with("=?base64?") or value.ends_with("?="):
+		if not value.begins_with("=?base64?") or not value.ends_with("?="):
+			return {"ok": false}
+		var encoded := value.substr(9, value.length() - 11)
+		if encoded.is_empty():
+			return {"ok": false}
+		var base64_pattern := RegEx.new()
+		base64_pattern.compile("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
+		if base64_pattern.search(encoded) == null:
+			return {"ok": false}
+		var raw := Marshalls.base64_to_raw(encoded)
+		if Marshalls.raw_to_base64(raw) != encoded:
+			return {"ok": false}
+		var decoded := raw.get_string_from_utf8()
+		if decoded.to_utf8_buffer() != raw:
+			return {"ok": false}
+		return {"ok": true, "value": decoded}
+	for byte in value.to_ascii_buffer():
+		if byte < 32 or byte > 126:
+			return {"ok": false}
+	return {"ok": true, "value": value}
 
 func _server_capabilities() -> Dictionary:
 	return {"tools": {}, "resources": {}}

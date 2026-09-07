@@ -31,6 +31,7 @@ static func parse_request(raw: String) -> Dictionary:
 	if parts.size() < 3:
 		return _bad("Malformed request line: " + request_line)
 	var headers := {}
+	var header_values := {}
 	for i in range(1, lines.size()):
 		var line: String = lines[i]
 		var colon := line.find(":")
@@ -38,6 +39,9 @@ static func parse_request(raw: String) -> Dictionary:
 			continue
 		var key := line.substr(0, colon).strip_edges().to_lower()
 		var value := line.substr(colon + 1).strip_edges()
+		if not header_values.has(key):
+			header_values[key] = []
+		header_values[key].append(value)
 		headers[key] = value
 	return {
 		"ok": true,
@@ -45,6 +49,7 @@ static func parse_request(raw: String) -> Dictionary:
 		"path": parts[1],
 		"version": parts[2],
 		"headers": headers,
+		"header_values": header_values,
 		"body": body,
 		"error": "",
 	}
@@ -68,4 +73,4 @@ static func build_response(status: int, body: String, content_type := "applicati
 	return out
 
 static func _bad(msg: String) -> Dictionary:
-	return {"ok": false, "method": "", "path": "", "version": "", "headers": {}, "body": "", "error": msg}
+	return {"ok": false, "method": "", "path": "", "version": "", "headers": {}, "header_values": {}, "body": "", "error": msg}

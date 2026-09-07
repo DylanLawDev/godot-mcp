@@ -23,6 +23,11 @@ func test_parse_headers_lowercased() -> void:
 	assert_eq(r["headers"]["content-type"], "application/json")
 	assert_eq(r["headers"]["content-length"], "2")
 
+func test_parse_preserves_duplicate_header_values() -> void:
+	var raw := "POST /mcp HTTP/1.1\r\nOrigin: http://localhost:1\r\nORIGIN: http://localhost:2\r\nContent-Length: 0\r\n\r\n"
+	var r := Http.parse_request(raw)
+	assert_eq(r["header_values"]["origin"], ["http://localhost:1", "http://localhost:2"])
+
 func test_content_length_reads_header() -> void:
 	var r := Http.parse_request(REQ)
 	assert_eq(Http.content_length(r["headers"]), 2)

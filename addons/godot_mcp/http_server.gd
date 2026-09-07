@@ -85,16 +85,28 @@ func _service_client(id: int) -> bool:
 		_send(c, Http.build_response(400, "Bad Request", "text/plain"))
 		return false
 	var need := Http.content_length(parsed["headers"])
-	if parsed["body"].to_utf8_buffer().size() < need:
+	var byte_body_start := _header_end_bytes(c["buf"])
+	if byte_body_start == -1 or c["buf"].size() - byte_body_start < need:
 		return false  # body still arriving
+	parsed["body"] = c["buf"].slice(byte_body_start, byte_body_start + need).get_string_from_utf8()
 	return _respond(peer, parsed, c)
 
+func _header_end_bytes(bytes: PackedByteArray) -> int:
+	for i in range(0, bytes.size() - 3):
+		if bytes[i] == 13 and bytes[i + 1] == 10 and bytes[i + 2] == 13 and bytes[i + 3] == 10:
+			return i + 4
+	return -1
+
 func _respond(peer: StreamPeerTCP, parsed: Dictionary, client: Dictionary) -> bool:
-	if parsed["method"] != "POST" or not str(parsed["path"]).begins_with("/mcp"):
+	if parsed["path"] != "/mcp":
+		_send(client, Http.build_response(404, "Not Found", "text/plain"))
+		return false
+	if parsed["method"] != "POST":
 		_send(client, Http.build_response(405, "Method Not Allowed", "text/plain"))
 		return false
 	var context := {
 		"headers": parsed["headers"],
+		"header_values": parsed["header_values"],
 		"method": parsed["method"],
 		"path": parsed["path"],
 		"listening_port": get_port(),

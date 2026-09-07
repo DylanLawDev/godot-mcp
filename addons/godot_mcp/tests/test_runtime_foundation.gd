@@ -210,3 +210,20 @@ func test_exited_process_drains_more_than_one_poll_of_output() -> void:
 	assert_eq(actual, content)
 	DirAccess.remove_absolute(path)
 	jobs.shutdown()
+
+func test_cancelled_stop_response_keeps_forced_cleanup() -> void:
+	var jobs := FakeJobs.new()
+	var manager := Sessions.new(jobs)
+	var result := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = result.value.session_id
+	var stop = manager.stop_session(id, 10)
+	stop.cancel("HTTP client disconnected")
+	manager.poll()
+	assert_true(manager._stops.has(id))
+	assert_true(jobs.active(id))
+	manager._stops[id].deadline = Time.get_ticks_msec()
+	manager.poll()
+	manager.poll()
+	assert_false(jobs.active(id))
+	assert_eq(manager.active_id, "")
+	manager.shutdown()

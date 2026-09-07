@@ -252,5 +252,7 @@ func _poll_stops() -> void:
 				_stops.erase(id)
 		if _stops.has(id):
 			stop.task.poll()
-			if stop.task.done:
+			# HTTP cancellation affects only delivery, not the owned stop action.
+			# Keep the grace/kill state machine alive independently of the task.
+			if stop.forced and Time.get_ticks_msec() >= stop.deadline + 3000:
 				_stops.erase(id)

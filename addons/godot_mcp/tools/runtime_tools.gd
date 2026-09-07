@@ -86,7 +86,22 @@ func capture_game_frame(args: Dictionary) -> Variant:
 		return failure("format must be file or base64")
 	return runtime.request(id, "capture_game_frame", {"downscale": args.get("downscale", 1), "format": args.get("format", "file")})
 
+func send_input(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	var events: Variant = args.get("events")
+	if not events is Array or events.is_empty() or events.size() > 256:
+		return failure("events must contain 1–256 objects")
+	# Full validation runs in the game, whose InputMap is authoritative.
+	return runtime.request(id, "send_input", {"events": events}, 30)
+
 func register_tools(reg) -> void:
+	reg.register("send_input", "Inject an ordered batch of action/key/mouse_button/mouse_motion events into the game. Coordinates use original root viewport pixels. Optional wait_frames or hold_frames schedule physics-frame delays.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "events": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["action", "key", "mouse_button", "mouse_motion"]}, "action": {"type": "string"}, "key": {"type": "string"}, "button": {"type": "string"}, "pressed": {"type": "boolean"}, "position": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, "relative": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, "modifiers": {"type": "array", "items": {"type": "string"}}, "strength": {"type": "number", "minimum": 0, "maximum": 1}, "wait_frames": {"type": "integer", "minimum": 0, "maximum": 600}, "hold_frames": {"type": "integer", "minimum": 0, "maximum": 600}}, "required": ["kind"]}}}, "required": ["session_id", "events"]}, Callable(self, "send_input"))
 	reg.register("capture_game_frame", "Capture the next rendered game viewport as PNG file or base64. Headless sessions cannot render. Coordinates refer to source viewport_size.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "downscale": {"type": "integer", "minimum": 1, "maximum": 16, "default": 1}, "format": {"type": "string", "enum": ["file", "base64"], "default": "file"}}, "required": ["session_id"]}, Callable(self, "capture_game_frame"))
 	reg.register("stop_project", "Gracefully stop a specific owned game session, terminating it after a bounded grace period if necessary. Retained stopped sessions are idempotent.",

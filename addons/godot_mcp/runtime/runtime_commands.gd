@@ -2,12 +2,16 @@ extends RefCounted
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
+const InputSequence = preload("res://addons/godot_mcp/runtime/input_sequence.gd")
+var input_sequence
 var bridge: Node
 
 func _init(owner: Node) -> void:
 	bridge = owner
+	input_sequence = InputSequence.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["send_input"] = Callable(input_sequence, "send")
 	bridge.handlers["capture_game_frame"] = Callable(self, "capture_game_frame")
 
 func capture_game_frame(args: Dictionary):
@@ -48,3 +52,6 @@ func _capture_after_draw(task, downscale: int, format: String) -> void:
 	else:
 		value["file"] = frame.file
 	task.resolve({"ok": true, "value": value})
+
+func cleanup() -> void:
+	input_sequence.release_all()

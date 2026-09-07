@@ -338,3 +338,7 @@ Run `tests/run_runtime_integration.sh --render` with GODOT set to a window-capab
 binary. It opens a temporary game window and checks both file/base64 screenshots
 against a red fixture pixel, then stops the game. The default headless path
 checks the explicit no-renderer error instead.
+
+The runtime fixture now injects a key press/release and mouse drag, checking
+its runtime log for actual callbacks and a held left-button mask during motion.
+An invalid batch must execute nothing, and delayed input while paused must fail.

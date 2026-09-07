@@ -112,6 +112,8 @@ func _send(message: Dictionary) -> bool:
 	return not bytes.is_empty() and _peer.put_data(bytes) == OK
 
 func _cleanup() -> void:
+	if _commands != null:
+		_commands.cleanup()
 	for task in _tasks.values():
 		task.cancel("Runtime stopped")
 	_tasks.clear()

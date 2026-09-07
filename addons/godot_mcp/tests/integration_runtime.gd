@@ -40,6 +40,8 @@ func _main() -> void:
 			await process_frame
 		if manager.active_id != "":
 			failures.append("quit did not stop child")
+		if not stop.done or not stop.value.ok:
+			failures.append("quit reply was lost before disconnect")
 	status = tools.get_run_status({"session_id": id}).value
 	print("EXIT: ", JSON.stringify(status))
 	var output := JSON.stringify(status.diagnostics)

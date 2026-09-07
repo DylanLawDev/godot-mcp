@@ -15,6 +15,8 @@ var _ready_sent := false
 var _heartbeat := 0
 var _deadline := 0
 var _tasks: Dictionary = {}
+var _quitting := false
+var _quit_deadline := 0
 
 func configure(args: Dictionary, capture) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -26,6 +28,10 @@ func configure(args: Dictionary, capture) -> void:
 
 func _process(_delta: float) -> void:
 	_peer.poll()
+	if _quitting:
+		if _peer.pending_bytes() == 0 or Time.get_ticks_msec() >= _quit_deadline:
+			get_tree().quit()
+		return
 	if _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 		if _accepted or Time.get_ticks_msec() >= _deadline:
 			_cleanup()
@@ -79,7 +85,8 @@ func _receive(message: Dictionary) -> void:
 	if command == "quit":
 		_cleanup()
 		_reply(id, {"ok": true, "value": {"stopping": true}})
-		get_tree().quit()
+		_quitting = true
+		_quit_deadline = Time.get_ticks_msec() + 1000
 	elif not handlers.has(command):
 		_reply(id, {"ok": false, "error": "Unknown runtime command: " + command})
 	elif _tasks.size() >= 64:

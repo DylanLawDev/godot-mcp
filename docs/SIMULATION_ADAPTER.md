@@ -14,9 +14,10 @@ Implement these methods:
   sections list requests no records; omitted sections requests all supported ones.
 
 Produce a coherent snapshot on the game main thread at one simulation boundary.
-Records must use stable entity IDs and JSON-native values (convert vectors to
+Each section is an array of record objects. Records must use stable entity IDs and JSON-native values (convert vectors to
 arrays, nodes/resources to IDs). Cycles, nonfinite floats and opaque objects are
-rejected; nesting and total value count are bounded. Do not mutate or advance the
+rejected; nesting and total value count are bounded. Encode integers outside
+±(2^53−1) as strings so JSON transport does not silently round them. Do not mutate or advance the
 simulation during a snapshot. Implement entity filtering in the adapter.
 
 The tool wraps the snapshot with capabilities and unsupported_sections. It never

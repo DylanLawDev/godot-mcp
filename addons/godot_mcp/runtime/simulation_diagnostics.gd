@@ -51,14 +51,17 @@ static func read_adapter(adapter: Node, args: Dictionary) -> Dictionary:
 				return {"ok": false, "error": "entity_ids must contain strings"}
 		filters["entity_ids"] = args.entity_ids.duplicate()
 	var snapshot: Variant = adapter.call("mcp_simulation_snapshot", filters)
-	if not snapshot is Dictionary or not json_safe(snapshot) or snapshot.get("schema_version") != 1 or not snapshot.get("data") is Dictionary:
+	if not snapshot is Dictionary or not json_safe(snapshot) or typeof(snapshot.get("schema_version")) not in [TYPE_INT, TYPE_FLOAT] or snapshot.get("schema_version") != 1 or not snapshot.get("data") is Dictionary:
 		return {"ok": false, "error": "Invalid JSON-safe simulation snapshot"}
 	var tick: Variant = snapshot.get("tick")
 	if not (typeof(tick) in [TYPE_INT, TYPE_FLOAT]) or tick < 0 or tick > 9007199254740991 or tick != floor(tick):
 		return {"ok": false, "error": "Simulation snapshot requires an authoritative nonnegative integer tick"}
 	for section in supported:
-		if not snapshot.data.has(section):
-			return {"ok": false, "error": "Adapter omitted requested supported section: " + section}
+		if not snapshot.data.has(section) or not snapshot.data[section] is Array:
+			return {"ok": false, "error": "Adapter must return a record array for section: " + section}
+		for record in snapshot.data[section]:
+			if not record is Dictionary:
+				return {"ok": false, "error": "Simulation section records must be objects"}
 	var data := {}
 	for section in supported:
 		data[section] = snapshot.data[section]
@@ -75,8 +78,10 @@ static func _json_safe(value: Variant, depth: int, budget: Dictionary) -> bool:
 	if depth > 16 or budget.remaining < 0:
 		return false
 	match typeof(value):
-		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_STRING:
+		TYPE_NIL, TYPE_BOOL, TYPE_STRING:
 			return true
+		TYPE_INT:
+			return value >= -9007199254740991 and value <= 9007199254740991
 		TYPE_FLOAT:
 			return is_finite(value)
 		TYPE_ARRAY:

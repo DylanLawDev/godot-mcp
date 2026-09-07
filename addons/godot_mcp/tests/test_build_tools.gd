@@ -56,3 +56,6 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 			cleanup.poll()
 		assert_eq(cleanup.error, "")
 		assert_false(DirAccess.dir_exists_absolute(path))
+
+func test_logs_are_json_safe_without_raw_ansi() -> void:
+	assert_eq(Pipeline.clean_log(String.chr(27) + "[90mtext" + String.chr(27) + "[0m\n"), "text\n")

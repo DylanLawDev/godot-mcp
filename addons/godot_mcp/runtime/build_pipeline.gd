@@ -133,13 +133,14 @@ func _retain_output(job: Dictionary, process: Dictionary) -> void:
 	for entry in process.get("output", []):
 		var diagnostic: Dictionary = entry.duplicate(true)
 		diagnostic["stage"] = job.stage
+		diagnostic["text"] = clean_log(str(diagnostic.get("text", "")))
 		job.diagnostics.append(diagnostic)
 	while job.diagnostics.size() > 1000:
 		job.diagnostics.pop_front()
 	var path: String = job._directory.path_join(job.stage + ".log.json")
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file != null:
-		file.store_string(JSON.stringify(process.get("output", [])))
+		file.store_string(JSON.stringify(job.diagnostics.filter(func(entry): return entry.get("stage") == job.stage)))
 		file.close()
 		job.artifacts.append({"path": path, "kind": "stage_log"})
 
@@ -191,3 +192,14 @@ func shutdown() -> void:
 	# Retain unfinished snapshot on plugin shutdown rather than race a live child.
 	# No source-project files are changed; normal terminal paths remove the copy.
 	active_id = ""
+
+static func clean_log(text: String) -> String:
+	var ansi := RegEx.new()
+	ansi.compile("\\x1b\\[[0-?]*[ -/]*[@-~]")
+	var plain := ansi.sub(text, "", true)
+	var out := ""
+	for character in plain:
+		var code := character.unicode_at(0)
+		if code >= 32 or code in [9, 10, 13]:
+			out += character
+	return out

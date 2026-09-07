@@ -50,3 +50,4 @@ func test_build_response_has_status_and_length() -> void:
 func test_build_response_status_text() -> void:
 	assert_true(Http.build_response(405, "no").begins_with("HTTP/1.1 405 Method Not Allowed\r\n"))
 	assert_true(Http.build_response(202, "").begins_with("HTTP/1.1 202 Accepted\r\n"))
+	assert_true(Http.build_response(403, "no").begins_with("HTTP/1.1 403 Forbidden\r\n"))

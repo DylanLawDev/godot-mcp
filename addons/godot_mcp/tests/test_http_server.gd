@@ -255,3 +255,33 @@ func test_legacy_initialize_and_tool_calls_need_no_modern_headers() -> void:
 	var list := '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 	assert_has(_http_post(_server.get_port(), list), "HTTP/1.1 200 OK")
 	_server.stop()
+
+func test_origin_policy_allows_absent_and_exact_loopback_origins() -> void:
+	_server = HttpServer.new(Callable(self, "_dispatch"))
+	assert_eq(_server.start(0), OK)
+	var port: int = _server.get_port()
+	assert_has(_http_post(port, "ok"), "HTTP/1.1 200 OK")
+	for host in ["127.0.0.1", "localhost"]:
+		var response := _http_post(port, "ok", ["Origin: http://%s:%d" % [host, port]])
+		assert_has(response, "HTTP/1.1 200 OK", host)
+	_server.stop()
+
+func test_origin_policy_rejects_untrusted_malformed_and_duplicate_values() -> void:
+	_server = HttpServer.new(Callable(self, "_dispatch"))
+	assert_eq(_server.start(0), OK)
+	var port: int = _server.get_port()
+	var rejected := [
+		["Origin: null"],
+		["Origin: https://localhost:%d" % port],
+		["Origin: http://example.com:%d" % port],
+		["Origin: http://localhost.evil:%d" % port],
+		["Origin: http://user@localhost:%d" % port],
+		["Origin: http://localhost:%d/path" % port],
+		["Origin: http://localhost:%d" % (port + 1)],
+		["Origin: http://localhost:%d http://example.com" % port],
+		["Origin: http://localhost:%d" % port, "Origin: http://127.0.0.1:%d" % port],
+	]
+	for headers in rejected:
+		var response := _http_post(port, "ok", headers)
+		assert_has(response, "HTTP/1.1 403 Forbidden", str(headers))
+	_server.stop()

@@ -5,6 +5,7 @@ const _STATUS := {
 	200: "OK",
 	202: "Accepted",
 	400: "Bad Request",
+	403: "Forbidden",
 	404: "Not Found",
 	405: "Method Not Allowed",
 	500: "Internal Server Error",

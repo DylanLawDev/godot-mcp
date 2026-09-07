@@ -98,6 +98,12 @@ func _header_end_bytes(bytes: PackedByteArray) -> int:
 	return -1
 
 func _respond(peer: StreamPeerTCP, parsed: Dictionary, client: Dictionary) -> bool:
+	var origin_check := _validate_origin(parsed.get("header_values", {}))
+	if not origin_check["ok"]:
+		_send(client, Http.build_response(403, JSON.stringify({
+			"jsonrpc": "2.0", "error": {"code": -32600, "message": origin_check["message"]},
+		})))
+		return false
 	if parsed["path"] != "/mcp":
 		_send(client, Http.build_response(404, "Not Found", "text/plain"))
 		return false
@@ -127,6 +133,20 @@ func _send_result(client: Dictionary, out: Variant) -> void:
 		_send(client, Http.build_response(202, ""))
 	else:
 		_send(client, Http.build_response(200, str(out)))
+
+func _validate_origin(header_values: Dictionary) -> Dictionary:
+	if not header_values.has("origin"):
+		return {"ok": true}
+	var origins = header_values["origin"]
+	if typeof(origins) != TYPE_ARRAY or origins.size() != 1:
+		return {"ok": false, "message": "Forbidden Origin: exactly one Origin value is required"}
+	var origin: String = origins[0]
+	var pattern := RegEx.new()
+	pattern.compile("^http://(127\\.0\\.0\\.1|localhost):([0-9]{1,5})$")
+	var match := pattern.search(origin)
+	if match == null or int(match.get_string(2)) != get_port():
+		return {"ok": false, "message": "Forbidden Origin: only the loopback MCP endpoint is allowed"}
+	return {"ok": true}
 
 func _send(client: Dictionary, response_text: String) -> void:
 	client["out"] = response_text.to_utf8_buffer()

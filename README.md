@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **42 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **43 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -282,3 +282,9 @@ capabilities, timestamps, nullable exit code and diagnostic output. Omit the ID
 for the active or most recent run; with no runs it returns `state:"idle"`.
 For example, `{"session_id":"<run_project result>"}` selects that exact run even
 after exit. A disconnected bridge does not by itself mean the game crashed.
+
+`stop_project({session_id, grace_seconds=2})` stops that owned game and returns
+`state`, `already_stopped`, `forced` and nullable `exit_code`. It first requests
+normal quit, then terminates the owned child if the grace period expires.
+An explicit ID prevents an old caller stopping a newer game. The response is
+deferred while other MCP clients stay responsive. Repeating a completed stop is safe.

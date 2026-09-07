@@ -61,7 +61,21 @@ func get_run_status(args: Dictionary) -> Dictionary:
 		return failure("Unknown or expired session: " + id)
 	return {"ok": true, "value": status}
 
+func stop_project(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	var grace: Variant = args.get("grace_seconds", 2)
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not (typeof(grace) in [TYPE_INT, TYPE_FLOAT]) or not is_finite(float(grace)) or grace < 0 or grace > 10:
+		return failure("grace_seconds must be a number from 0 to 10")
+	return runtime.stop_session(id, float(grace))
+
 func register_tools(reg) -> void:
+	reg.register("stop_project", "Gracefully stop a specific owned game session, terminating it after a bounded grace period if necessary. Retained stopped sessions are idempotent.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "grace_seconds": {"type": "number", "minimum": 0, "maximum": 10, "default": 2}}, "required": ["session_id"]}, Callable(self, "stop_project"))
 	reg.register("get_run_status", "Read current or retained game status without blocking. An omitted session_id selects the active then most recent session.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}}}, Callable(self, "get_run_status"))
 	reg.register("run_project", "Launch saved main scene or explicit scene in a managed standalone game. Returns a starting session ID; poll get_run_status for readiness.",

@@ -145,3 +145,23 @@ func test_handshake_authentication_stale_session_and_disconnect() -> void:
 	assert_false(pending_command.value.ok)
 	assert_false(manager.sessions.a.bridge_connected)
 	manager.shutdown()
+
+func test_stop_owned_session_forced_and_idempotent() -> void:
+	var jobs := FakeJobs.new()
+	var manager := Sessions.new(jobs)
+	var result := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = result.value.session_id
+	var stop = manager.stop_session(id, 0)
+	assert_false(stop.done)
+	assert_eq(manager.summary(id).state, "stopping")
+	manager.poll()
+	manager.poll()
+	assert_true(stop.done)
+	assert_true(stop.value.ok)
+	assert_true(stop.value.value.forced)
+	assert_true(manager.stop_session(id, 0).value.value.already_stopped)
+	assert_false(manager.stop_session("unknown", 0).value.ok)
+	var newer := manager.launch("res://examples/scenes/main.tscn", true)
+	manager.stop_session(id, 0)
+	assert_true(jobs.active(newer.value.session_id))
+	manager.shutdown()

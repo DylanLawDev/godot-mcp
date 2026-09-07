@@ -12,6 +12,7 @@ var background_id := ""
 var _listener := TCPServer.new()
 var _peers: Array = []
 var _pending: Dictionary = {}
+var _stops: Dictionary = {}
 var _next_request := 0
 var _history: Array[String] = []
 
@@ -141,6 +142,8 @@ func poll() -> void:
 			while _history.size() > 20:
 				sessions.erase(_history.pop_front())
 
+	_poll_stops()
+
 func _receive(item: Dictionary, message: Dictionary) -> void:
 	var id: String = item.id
 	if id == "":
@@ -194,6 +197,9 @@ func shutdown() -> void:
 		_drop(item)
 	_listener.stop()
 	jobs.shutdown()
+	for stop in _stops.values():
+		stop.task.cancel("Plugin disabled")
+	_stops.clear()
 
 # Shared background lane for scenario/validation/export tools. Arguments are
 # constructed by trusted tool code, never an arbitrary caller-provided command.
@@ -209,3 +215,42 @@ func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: flo
 		jobs.records[id]["deadline_msec"] = Time.get_ticks_msec() + int(timeout_seconds * 1000)
 		jobs.records[id]["artifact_dir"] = artifact_dir(id)
 	return result
+
+func stop_session(id: String, grace_seconds: float):
+	var task := Deferred.new(grace_seconds + 3.0)
+	if not sessions.has(id):
+		task.resolve({"ok": false, "error": "Unknown or expired session: " + id})
+		return task
+	if not jobs.active(id):
+		task.resolve({"ok": true, "value": {"session_id": id, "state": sessions[id].state, "already_stopped": true, "forced": false, "exit_code": sessions[id].exit_code}})
+		return task
+	if _stops.has(id):
+		task.resolve({"ok": false, "error": "A stop request is already pending for " + id})
+		return task
+	# Cancel prior commands before enqueueing graceful quit. Their callbacks run
+	# before the game's cleanup; no other session is affected.
+	for rid in _pending.keys():
+		if _pending.has(rid) and _pending[rid].session_id == id:
+			_pending[rid].task.cancel("Session is stopping")
+	if sessions[id].bridge_connected:
+		request(id, "quit", {}, grace_seconds + 1.0)
+	sessions[id].state = "stopping"
+	sessions[id].termination_reason = "requested_stop"
+	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false}
+	return task
+
+func _poll_stops() -> void:
+	for id in _stops.keys():
+		var stop: Dictionary = _stops[id]
+		if not jobs.active(id):
+			stop.task.resolve({"ok": true, "value": {"session_id": id, "state": sessions[id].state, "already_stopped": false, "forced": stop.forced, "exit_code": sessions[id].exit_code}})
+			_stops.erase(id)
+		elif not stop.forced and Time.get_ticks_msec() >= stop.deadline:
+			stop.forced = true
+			if not jobs.terminate(id, "forced_stop"):
+				stop.task.resolve({"ok": false, "error": "Could not terminate owned session " + id})
+				_stops.erase(id)
+		if _stops.has(id):
+			stop.task.poll()
+			if stop.task.done:
+				_stops.erase(id)

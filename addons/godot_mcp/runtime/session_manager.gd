@@ -46,7 +46,7 @@ func launch(scene: String, headless: bool, timeout_seconds: float = 15.0) -> Dic
 		return spawned
 	active_id = id
 	latest_id = id
-	sessions[id] = {"session_id": id, "state": "starting", "scene": scene, "pid": spawned.value.pid, "headless": headless, "bridge_connected": false, "capabilities": {}, "started_at": spawned.value.started_at, "ended_at": null, "exit_code": null, "termination_reason": "", "diagnostics": [], "artifact_dir": directory, "_token": token, "_deadline": Time.get_ticks_msec() + int(timeout_seconds * 1000), "_peer": null, "_heartbeat": 0}
+	sessions[id] = {"session_id": id, "state": "starting", "scene": scene, "pid": spawned.value.pid, "headless": headless, "bridge_connected": false, "capabilities": {}, "started_at": spawned.value.started_at, "ended_at": null, "exit_code": null, "termination_reason": "", "diagnostics": [], "artifact_dir": directory, "_token": token, "_deadline": Time.get_ticks_msec() + int(timeout_seconds * 1000), "_peer": null, "_heartbeat": 0, "_errors": [], "_error_sequence": 0, "_stderr_sequence": 0, "_source_gap": false}
 	return {"ok": true, "value": summary(id)}
 
 func summary(id: String) -> Dictionary:
@@ -122,6 +122,15 @@ func poll() -> void:
 		var s: Dictionary = sessions[active_id]
 		var process: Dictionary = jobs.records.get(active_id, {})
 		s.diagnostics = process.get("output", []).duplicate(true)
+		if not s.diagnostics.is_empty() and s._stderr_sequence < int(s.diagnostics[0].sequence) - 1:
+			s._source_gap = true
+		for entry in s.diagnostics:
+			if entry.sequence > s._stderr_sequence and entry.source == "stderr":
+				var error_entry: Dictionary = entry.duplicate(true)
+				error_entry["possible_duplicate"] = true
+				_record_error(active_id, error_entry)
+			if entry.sequence > s._stderr_sequence:
+				s._stderr_sequence = entry.sequence
 		if s.state == "starting" and Time.get_ticks_msec() >= s._deadline:
 			s.termination_reason = "startup_timeout"
 			jobs.terminate(active_id, "startup_timeout")
@@ -169,6 +178,19 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 		"heartbeat":
 			s._heartbeat = Time.get_ticks_msec()
 			s.bridge_connected = s.state == "running"
+		"errors":
+			var batch: Variant = message.get("batch")
+			if not batch is Dictionary or not batch.get("entries") is Array or batch.entries.size() > 100:
+				_drop(item)
+				return
+			for entry in batch.entries:
+				if not entry is Dictionary:
+					_drop(item)
+					return
+				var error_entry: Dictionary = entry.duplicate(true)
+				error_entry["source"] = "runtime_logger"
+				_record_error(id, error_entry)
+			s._source_gap = s._source_gap or batch.get("truncated", false)
 		"reply":
 			var rid := str(message.get("request_id", ""))
 			if _pending.has(rid) and _pending[rid].session_id == id:
@@ -256,3 +278,28 @@ func _poll_stops() -> void:
 			# Keep the grace/kill state machine alive independently of the task.
 			if stop.forced and Time.get_ticks_msec() >= stop.deadline + 3000:
 				_stops.erase(id)
+
+func _record_error(id: String, entry: Dictionary) -> void:
+	var session: Dictionary = sessions[id]
+	session._error_sequence += 1
+	entry["source_sequence"] = entry.get("sequence")
+	entry["sequence"] = session._error_sequence
+	session._errors.append(entry)
+	while session._errors.size() > 1000:
+		session._errors.pop_front()
+
+func errors(id: String, after: int, limit: int) -> Dictionary:
+	if not sessions.has(id):
+		return {"ok": false, "error": "Unknown or expired session: " + id}
+	var session: Dictionary = sessions[id]
+	var entries: Array = session.get("_errors", [])
+	var out := []
+	var cursor := after
+	for entry in entries:
+		if entry.sequence > after:
+			out.append(entry.duplicate(true))
+			cursor = entry.sequence
+		if out.size() >= limit:
+			break
+	var truncated: bool = session.get("_source_gap", false) or (not entries.is_empty() and after < int(entries[0].sequence) - 1)
+	return {"ok": true, "value": {"session_id": id, "state": session.state, "entries": out, "next_sequence": cursor, "truncated": truncated}}

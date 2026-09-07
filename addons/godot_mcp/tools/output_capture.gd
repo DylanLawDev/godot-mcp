@@ -16,10 +16,11 @@ extends Logger
 var _mutex := Mutex.new()
 var _entries: Array = []
 var cap: int = 1000
+var _sequence := 0
 
 func _log_message(message, error) -> void:
 	_mutex.lock()
-	_entries.append({"type": "log", "text": message, "error": error})
+	_append({"type": "log", "text": message, "error": error})
 	_evict()
 	_mutex.unlock()
 
@@ -28,7 +29,7 @@ func _log_error(_function, _file, line, code, rationale, _editor_notify, error_t
 	# `code` is the failed condition / error code; `rationale` is the human-readable
 	# explanation passed by ERR_*_MSG macros and push_error. Keep both — the rationale
 	# is the actionable part and would otherwise be dropped.
-	_entries.append({"type": "error", "line": line, "message": code, "rationale": rationale, "error_type": error_type})
+	_append({"type": "error", "function": _function, "file": _file, "line": line, "message": code, "rationale": rationale, "error_type": error_type, "backtraces": _encode_backtraces(_script_backtraces)})
 	_evict()
 	_mutex.unlock()
 
@@ -57,3 +58,35 @@ func clear() -> void:
 	_mutex.lock()
 	_entries.clear()
 	_mutex.unlock()
+
+# Caller holds mutex; sequence never resets when buffers are cleared.
+func _append(entry: Dictionary) -> void:
+	_sequence += 1
+	entry["sequence"] = _sequence
+	entry["timestamp_msec"] = Time.get_ticks_msec()
+	_entries.append(entry)
+
+static func _encode_backtraces(backtraces: Array) -> Array:
+	var result := []
+	for trace in backtraces:
+		var frames := []
+		for index in mini(trace.get_frame_count(), 64):
+			frames.append({"function": trace.get_frame_function(index), "file": trace.get_frame_file(index), "line": trace.get_frame_line(index)})
+		result.append({"language": trace.get_language_name(), "frames": frames})
+	return result
+
+func entries_since(after: int, limit: int = 100, errors_only: bool = true) -> Dictionary:
+	_mutex.lock()
+	var result := []
+	var cursor := after
+	var truncated := not _entries.is_empty() and after < int(_entries[0].sequence) - 1
+	for entry in _entries:
+		if entry.sequence <= after:
+			continue
+		cursor = entry.sequence
+		if not errors_only or entry.get("type") == "error" or entry.get("error", false):
+			result.append(entry.duplicate(true))
+		if result.size() >= limit:
+			break
+	_mutex.unlock()
+	return {"entries": result, "next_sequence": cursor, "truncated": truncated}

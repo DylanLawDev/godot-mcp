@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **48 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **49 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -326,3 +326,11 @@ values using the editor tool's `var_to_str` encoding. Example: `{"session_id":
 for all inspectable properties, or pass `[]` for none. Unknown names fail before
 getters run. Values reflect live state, not saved scene defaults; oversized
 responses should be narrowed with the property filter.
+
+`get_runtime_errors({session_id,after_sequence=0,limit=100})` returns session-scoped
+errors with next_sequence and truncated flags. Structured entries include function,
+file, line and available stack frames. Startup/exit stderr is retained separately
+with source and possible_duplicate tags because it can also represent a structured
+logger error. Example pagination: pass the previous next_sequence as after_sequence.
+Reads do not clear logs, and completed sessions remain queryable. A source gap
+reports truncated even when the retained editor-side ring itself has not filled.

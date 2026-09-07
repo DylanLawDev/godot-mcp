@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **54 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **55 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -373,3 +373,13 @@ requested duration. Missing custom timings are never inferred. The performance
 fixture registers deterministic demonstration values in milliseconds; real games
 must register their own measured `Performance` custom monitors. Interrupted calls
 return an error containing JSON with `partial:true` and received samples.
+
+`validate_project({scene:"res://main.tscn",startup_seconds:3,timeout_seconds:120})`
+returns a job ID immediately. Poll `validate_project({job_id:"…"})` for snapshot,
+import and startup stages, pass/fail, diagnostics and retained log/report artifacts.
+It checks saved-file imports and startup only. A temporary project copy preserves
+autoloads and disables this MCP editor plugin; other editor plugins still run.
+Copies exclude `.git`, `.godot`, common build directories, configured export files
+and managed artifacts. Symbolic links are rejected with an explicit error. Normal
+completion removes the copy; disabling the plugin mid-job can retain an unfinished
+copy in the job artifact directory. One scenario/validation/export job runs at a time.

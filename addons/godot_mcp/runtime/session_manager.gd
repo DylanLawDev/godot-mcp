@@ -3,6 +3,8 @@ extends RefCounted
 const Peer = preload("res://addons/godot_mcp/runtime/bridge_peer.gd")
 const Wire = preload("res://addons/godot_mcp/runtime/bridge_wire.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+const BuildPipeline = preload("res://addons/godot_mcp/runtime/build_pipeline.gd")
+var build_jobs
 const Jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd")
 var jobs
 var sessions: Dictionary = {}
@@ -18,6 +20,7 @@ var _history: Array[String] = []
 
 func _init(process_jobs = null) -> void:
 	jobs = process_jobs if process_jobs != null else Jobs.new()
+	build_jobs = BuildPipeline.new(self)
 
 static func new_id() -> String:
 	return Crypto.new().generate_random_bytes(16).hex_encode()
@@ -90,6 +93,7 @@ func _send(peer, message: Dictionary) -> bool:
 
 func poll() -> void:
 	jobs.poll()
+	build_jobs.poll()
 	if background_id != "" and jobs.active(background_id):
 		if Time.get_ticks_msec() >= jobs.records[background_id].get("deadline_msec", 9223372036854775807):
 			jobs.terminate(background_id, "timeout")
@@ -222,6 +226,7 @@ func _drop(item: Dictionary) -> void:
 				_pending[rid].task.cancel("Runtime bridge disconnected")
 
 func shutdown() -> void:
+	build_jobs.shutdown()
 	for item in _peers.duplicate():
 		_drop(item)
 	_listener.stop()
@@ -233,7 +238,7 @@ func shutdown() -> void:
 # Shared background lane for scenario/validation/export tools. Arguments are
 # constructed by trusted tool code, never an arbitrary caller-provided command.
 func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: float, prepared_id: String = "") -> Dictionary:
-	if background_id != "" and jobs.active(background_id):
+	if background_busy():
 		return {"ok": false, "error": "A background job is active: " + background_id}
 	var id := new_id() if prepared_id == "" else prepared_id
 	if id.length() != 32 or not id.is_valid_hex_number(false) or jobs.records.has(id):
@@ -312,3 +317,6 @@ func errors(id: String, after: int, limit: int) -> Dictionary:
 			break
 	var truncated: bool = session.get("_source_gap", false) or (not entries.is_empty() and after < int(entries[0].sequence) - 1)
 	return {"ok": true, "value": {"session_id": id, "state": session.state, "entries": out, "next_sequence": cursor, "truncated": truncated}}
+
+func background_busy() -> bool:
+	return build_jobs.active_id != "" or (background_id != "" and jobs.active(background_id))

@@ -8,13 +8,14 @@ var records: Dictionary = {}
 var _handles: Dictionary = {}
 var _finished: Array[String] = []
 var _utf8_tails: Dictionary = {}
+var _error_tails: Dictionary = {}
 
 func launch(id: String, executable: String, arguments: PackedStringArray, kind: String) -> Dictionary:
 	var handle := OS.execute_with_pipe(executable, arguments, false)
 	if handle.is_empty() or int(handle.get("pid", -1)) <= 0:
 		return {"ok": false, "error": "Could not launch Godot child process"}
 	_handles[id] = handle
-	records[id] = {"id": id, "kind": kind, "pid": handle.pid, "state": "running", "started_at": Time.get_datetime_string_from_system(true), "ended_at": null, "exit_code": null, "output": [], "termination_reason": "", "sequence": 0}
+	records[id] = {"id": id, "kind": kind, "pid": handle.pid, "state": "running", "started_at": Time.get_datetime_string_from_system(true), "ended_at": null, "exit_code": null, "output": [], "termination_reason": "", "sequence": 0, "engine_errors": false}
 	return {"ok": true, "value": records[id].duplicate(true)}
 
 func poll() -> void:
@@ -54,6 +55,11 @@ func _drain(id: String, pipe: FileAccess, source: String) -> bool:
 	return false
 
 func _append_output(id: String, source: String, text: String) -> void:
+	var key := id + ":" + source
+	var combined: String = _error_tails.get(key, "") + text
+	if combined.begins_with("ERROR:") or combined.begins_with("SCRIPT ERROR:") or "\nERROR:" in combined or "\nSCRIPT ERROR:" in combined:
+		records[id]["engine_errors"] = true
+	_error_tails[key] = combined.right(64)
 	records[id].sequence += 1
 	records[id].output.append({"sequence": records[id].sequence, "source": source, "text": text, "timestamp_msec": Time.get_ticks_msec()})
 	while records[id].output.size() > OUTPUT_CAP:
@@ -97,6 +103,7 @@ func _close(id: String) -> void:
 		if not tail.is_empty():
 			_append_output(id, source, tail.get_string_from_utf8())
 		_utf8_tails.erase(key)
+		_error_tails.erase(key)
 	var h: Dictionary = _handles[id]
 	for key in ["stdio", "stderr"]:
 		if h.get(key) != null:

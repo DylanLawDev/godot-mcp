@@ -28,7 +28,7 @@ func run_scenario(args: Dictionary) -> Dictionary:
 	var json := JSON.new()
 	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
 		return {"ok": false, "error": "Scenario must be a valid JSON object"}
-	if runtime.background_id != "" and runtime.jobs.active(runtime.background_id):
+	if runtime.background_busy():
 		return {"ok": false, "error": "A background job is active: " + runtime.background_id}
 	var id := Sessions.new_id()
 	var directory := Sessions.artifact_dir(id)

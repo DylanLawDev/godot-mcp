@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+const Sampler = preload("res://addons/godot_mcp/runtime/performance_sampler.gd")
 const InputSequence = preload("res://addons/godot_mcp/runtime/input_sequence.gd")
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 var _manager
@@ -185,7 +186,20 @@ func advance_ticks(args: Dictionary) -> Variant:
 		return failure("ticks must be an integer from 1 to 10000")
 	return runtime.request(id, "advance_ticks", {"ticks": args.ticks}, 35)
 
+func sample_performance(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	if not args.get("session_id") is String or args.session_id == "":
+		return failure("session_id must be a nonempty string")
+	var error := Sampler.validate(args)
+	if error != "":
+		return failure(error)
+	return runtime.request(args.session_id, "sample_performance", args, float(args.get("duration_seconds", 2)) + 10)
+
 func register_tools(reg) -> void:
+	reg.register("sample_performance", "Sample live frame delta, process/physics times, memory, counts and registered custom monitors. Reports numeric summaries and missing monitors; does not advance or pause simulation.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "duration_seconds": {"type": "number", "minimum": 0.1, "maximum": 30, "default": 2}, "interval_ms": {"type": "integer", "minimum": 16, "maximum": 1000, "default": 100}, "custom_monitors": {"type": "array", "maxItems": 64, "items": {"type": "string"}}}, "required": ["session_id"]}, Callable(self, "sample_performance"))
 	reg.register("advance_ticks", "Advance an instrumented simulation by an exact tick count and leave its scheduler controlled/paused for inspection. Requires a game-side adapter; rendered frames are not simulation ticks.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "ticks": {"type": "integer", "minimum": 1, "maximum": 10000}}, "required": ["session_id", "ticks"]}, Callable(self, "advance_ticks"))
 	reg.register("get_simulation_snapshot", "Read a coherent game-instrumented simulation snapshot. Requires exactly one diagnostics adapter; unavailable sections are explicit, not fabricated.",

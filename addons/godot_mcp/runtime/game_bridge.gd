@@ -3,6 +3,8 @@ const Peer = preload("res://addons/godot_mcp/runtime/bridge_peer.gd")
 const Commands = preload("res://addons/godot_mcp/runtime/runtime_commands.gd")
 const Wire = preload("res://addons/godot_mcp/runtime/bridge_wire.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+var current_request_id := ""
+var last_delta_msec := 0.0
 var _commands
 var scene_ready := false
 var session_id := ""
@@ -32,6 +34,7 @@ func configure(args: Dictionary, capture) -> void:
 	_deadline = Time.get_ticks_msec() + 15000
 
 func _process(_delta: float) -> void:
+	last_delta_msec = _delta * 1000.0
 	_peer.poll()
 	if _quitting:
 		if _peer.pending_bytes() == 0 or Time.get_ticks_msec() >= _quit_deadline:
@@ -103,7 +106,9 @@ func _receive(message: Dictionary) -> void:
 	elif _tasks.size() >= 64:
 		_reply(id, {"ok": false, "error": "Too many pending runtime commands"})
 	else:
+		current_request_id = id
 		var result: Variant = handlers[command].call(message.args)
+		current_request_id = ""
 		if result is Deferred:
 			_tasks[id] = result
 		else:

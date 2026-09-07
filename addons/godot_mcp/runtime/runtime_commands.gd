@@ -1,4 +1,6 @@
 extends RefCounted
+const Sampler = preload("res://addons/godot_mcp/runtime/performance_sampler.gd")
+var sampler
 const Simulation = preload("res://addons/godot_mcp/runtime/simulation_diagnostics.gd")
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
@@ -14,8 +16,10 @@ func _init(owner: Node) -> void:
 	bridge = owner
 	input_sequence = InputSequence.new(owner)
 	simulation = Simulation.new(owner)
+	sampler = Sampler.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["sample_performance"] = Callable(sampler, "sample")
 	bridge.handlers["advance_ticks"] = Callable(simulation, "advance")
 	bridge.handlers["get_simulation_snapshot"] = Callable(simulation, "snapshot")
 	bridge.handlers["get_runtime_properties"] = Callable(self, "get_runtime_properties")

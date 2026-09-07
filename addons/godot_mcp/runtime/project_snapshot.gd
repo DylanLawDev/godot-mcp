@@ -65,7 +65,7 @@ func poll() -> void:
 			var relative := _relative.path_join(name)
 			var absolute := source.path_join(relative)
 			var managed := ProjectSettings.globalize_path("user://godot_mcp").trim_suffix("/")
-			if not _removing and (absolute == managed or absolute.begins_with(managed + "/")):
+			if not _removing and managed.begins_with(source + "/") and absolute == managed:
 				continue
 			if not _removing and (_directory.current_is_dir() and name in SKIP_DIRS or absolute in _excluded):
 				continue

@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **50 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **51 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -341,3 +341,10 @@ scenario runner as a background job. Example: `{"scenario_path":
 Capture paths are remapped into that run's managed directory using an execution
 copy; the source JSON is unchanged. One background scenario/build job may run at
 a time, independently of the interactive session. Poll with get_scenario_result.
+
+`get_scenario_result({scenario_id})` returns running/completed/failed/timed_out
+state, exit code, diagnostics, the existing runner result (assertions, logs and
+capture manifests), and PNG artifact metadata. Completed assertion failures have
+passed:false; missing/malformed results and incompatible exit codes are failures.
+Large inline results are replaced with a result_path reference. Reads are cached
+after completion and do not parse files while the runner is writing them.

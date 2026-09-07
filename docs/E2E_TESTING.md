@@ -361,3 +361,7 @@ Launch `run_scenario` with `examples/scenarios/move_right.json`. Confirm a stabl
 scenario ID and a result JSON appear without blocking editor requests. Try a
 second launch while it is running and expect a busy error. Capture scenarios
 must write below their own run directories, leaving original JSON unchanged.
+
+`tests/integration_scenario.gd` now polls `get_scenario_result` and verifies a
+stable completed verdict. Failure tests cover missing/malformed files, conflicting
+exit codes, timeout, and capture paths escaping the managed job directory.

@@ -68,6 +68,12 @@ func _main() -> void:
 			await process_frame
 		if not timed.value.ok:
 			failures.append(timed.value)
+		var properties = tools.get_runtime_properties({"session_id": id, "path": ".", "properties": ["input_count"]})
+		while not properties.done:
+			manager.poll()
+			await process_frame
+		if not properties.value.ok or properties.value.value.properties.input_count != "2":
+			failures.append("runtime property did not reflect injected input: " + str(properties.value))
 		for dimensions in [[800, 600], [480, 360]]:
 			var resized = tools.resize_game_window({"session_id": id, "width": dimensions[0], "height": dimensions[1]})
 			while not resized.done:

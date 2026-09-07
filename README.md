@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **47 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **48 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -319,3 +319,10 @@ live scene, including runtime-spawned children. It returns tree, frame and an
 explicit truncated flag. A node includes name/type/path/script/children; paths
 are relative to the current game scene. Example: `{"session_id":"<id>",
 "max_depth":2}`. This does not use the edited scene or expose bridge internals.
+
+`get_runtime_properties({session_id,path,properties?})` reads the running node's
+values using the editor tool's `var_to_str` encoding. Example: `{"session_id":
+"<id>","path":"Settler","properties":["position","name"]}`. Omit the filter
+for all inspectable properties, or pass `[]` for none. Unknown names fail before
+getters run. Values reflect live state, not saved scene defaults; oversized
+responses should be narrowed with the property filter.

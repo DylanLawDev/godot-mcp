@@ -82,3 +82,15 @@ func test_bounded_tree_reports_depth_and_node_truncation() -> void:
 	assert_false(full.truncated)
 	assert_eq(full.tree.children.size(), 5)
 	scene.free()
+
+func test_selected_properties_validate_and_filter() -> void:
+	var node := Node2D.new()
+	node.position = Vector2(3, 4)
+	var ops = preload("res://addons/godot_mcp/utils/node_ops.gd")
+	var selected: Dictionary = ops.encode_selected_props(node, ["position"])
+	assert_true(selected.ok)
+	assert_eq(selected.value.size(), 1)
+	assert_eq(str_to_var(selected.value.position), Vector2(3, 4))
+	assert_eq(ops.encode_selected_props(node, []).value, {})
+	assert_false(ops.encode_selected_props(node, ["position", "not_a_property"]).ok)
+	node.free()

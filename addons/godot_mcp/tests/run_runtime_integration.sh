@@ -22,6 +22,7 @@ func _ready():
 EOF
 cat > "$fixture_dir/fixture.gd" <<'EOF'
 extends Node
+var input_count := 0
 func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().root.size = Vector2i(640, 480)
@@ -42,6 +43,7 @@ func _input(event):
 	if event is InputEventKey and event.keycode == KEY_SPACE and event.pressed:
 		get_tree().paused = false
 	if event is InputEventKey and event.keycode == KEY_A and event.pressed:
+		input_count += 1
 		print("KEY_A_RECEIVED")
 	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		print("DRAG_MASK_OK")

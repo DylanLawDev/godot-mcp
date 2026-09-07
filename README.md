@@ -243,9 +243,9 @@ the plugin only needs basic HTTP/1.1 parsing and JSON-RPC.
   ports.
 - **Loopback only, no auth in v1.** The server binds to `127.0.0.1`. An optional
   bearer token is planned. Don't expose the port to untrusted networks.
-- **Coming later:** in-game runtime tools (live screenshot, input injection, and
-  node queries against a *running* game) need a second live connection from the
-  game and are planned for v2.
+- **Managed runtime:** launch a game session with `run_project`, then use its
+  session ID for screenshots, input, window resizing and live node queries.
+  These use a separate authenticated game connection; headless games do not render.
 
 ---
 

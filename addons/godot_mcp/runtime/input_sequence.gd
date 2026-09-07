@@ -65,6 +65,7 @@ func send(args: Dictionary):
 	if checked.frames > 0 and bridge.get_tree().paused:
 		task.resolve({"ok": false, "error": "Frame-delayed input is unavailable while paused"})
 		return task
+	task.deadline_msec = Time.get_ticks_msec() + int(timeout_for_frames(checked.frames, Engine.physics_ticks_per_second) * 1000)
 	_busy = true
 	task.on_cancel = Callable(self, "release_all")
 	_run(task, events.duplicate(true))
@@ -124,3 +125,16 @@ func release_all() -> void:
 			Input.parse_input_event(built.event)
 			Input.flush_buffered_events()
 	_held.clear()
+
+static func timeout_for_frames(frames: int, ticks_per_second: float) -> float:
+	return maxf(30.0, float(clampi(frames, 0, 600)) / maxf(1.0, ticks_per_second) + 10.0)
+
+static func timeout_for_events(events: Array, ticks_per_second: float) -> float:
+	var frames := 0
+	for event in events:
+		if event is Dictionary:
+			for key in ["wait_frames", "hold_frames"]:
+				var count: Variant = event.get(key, 0)
+				if typeof(count) in [TYPE_INT, TYPE_FLOAT] and is_finite(count):
+					frames += int(clampf(count, 0, 600))
+	return timeout_for_frames(frames, ticks_per_second)

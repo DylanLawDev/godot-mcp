@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+const InputSequence = preload("res://addons/godot_mcp/runtime/input_sequence.gd")
 const Paths = preload("res://addons/godot_mcp/utils/paths.gd")
 var _manager
 
@@ -97,7 +98,9 @@ func send_input(args: Dictionary) -> Variant:
 	if not events is Array or events.is_empty() or events.size() > 256:
 		return failure("events must contain 1–256 objects")
 	# Full validation runs in the game, whose InputMap is authoritative.
-	return runtime.request(id, "send_input", {"events": events}, 30)
+	var tick_rate := float(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
+	var timeout := InputSequence.timeout_for_events(events, tick_rate) + 5.0
+	return runtime.request(id, "send_input", {"events": events}, timeout)
 
 func register_tools(reg) -> void:
 	reg.register("send_input", "Inject an ordered batch of action/key/mouse_button/mouse_motion events into the game. Coordinates use original root viewport pixels. Optional wait_frames or hold_frames schedule physics-frame delays.",

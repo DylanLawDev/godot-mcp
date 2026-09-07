@@ -211,6 +211,53 @@ func test_results_ok_false_on_fatal() -> void:
 	assert_false(r["passed"])
 	root.free()
 
+# --- input_event step (raw InputEvent synthesis) ---
+# Handler (_input) delivery needs the scene root inside a running tree, which a
+# synchronous unit test does not have — that path is covered by the
+# examples/scenarios/input_events.json E2E scenario. Poll state IS observable here.
+
+func test_input_event_key_updates_poll_state() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var press := eng.execute({"type": "input_event", "kind": "key", "key": "Left"})
+	assert_true(press["ok"])
+	assert_true(Input.is_key_pressed(KEY_LEFT))
+	assert_true(Input.is_physical_key_pressed(KEY_LEFT))
+	var release := eng.execute({"type": "input_event", "kind": "key", "key": "Left", "pressed": false})
+	assert_true(release["ok"])
+	assert_false(Input.is_key_pressed(KEY_LEFT))
+	root.free()
+
+func test_input_event_action_updates_poll_state() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "input_event", "kind": "action", "action": "ui_accept"})["ok"])
+	assert_true(Input.is_action_pressed("ui_accept"))
+	assert_true(eng.execute({"type": "input_event", "kind": "action", "action": "ui_accept", "pressed": false})["ok"])
+	assert_false(Input.is_action_pressed("ui_accept"))
+	root.free()
+
+func test_input_event_mouse_button_updates_poll_state() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_true(eng.execute({"type": "input_event", "kind": "mouse_button", "button": "left", "position": [3, 4]})["ok"])
+	assert_true(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	assert_true(eng.execute({"type": "input_event", "kind": "mouse_button", "button": "left", "pressed": false})["ok"])
+	assert_false(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	root.free()
+
+func test_input_event_invalid_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_event", "kind": "key", "key": "NotAKey"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
 # --- capture_frames step ---
 # The engine only validates and prepares the destination; the runner owns the
 # viewport grabbing (E2E: examples/scenarios/burst_capture.json with --render).
@@ -247,6 +294,76 @@ func test_capture_frames_bad_count_is_fatal() -> void:
 	var res := eng.execute({"type": "capture_frames", "count": 0, "dir": "user://x"})
 	assert_false(res["ok"])
 	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_input_event_hold_schedules_release() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_event", "kind": "key", "key": "Right", "hold_frames": 3})
+	assert_true(res["ok"])
+	assert_eq(res["follow_up_after_frames"], 3)
+	assert_eq(res["follow_up"]["pressed"], false)
+	assert_false(res["follow_up"].has("hold_frames"), "release follow_up must not re-hold")
+	assert_true(Input.is_key_pressed(KEY_RIGHT))
+	# The runner would pump frames then run the follow_up; emulate that here.
+	eng.execute(res["follow_up"])
+	assert_false(Input.is_key_pressed(KEY_RIGHT))
+	root.free()
+
+func test_input_event_hold_seconds_converts_at_tick_rate() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var fps := int(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
+	var res := eng.execute({"type": "input_event", "kind": "action", "action": "ui_accept", "hold_seconds": 0.5})
+	assert_eq(res["follow_up_after_frames"], int(ceil(0.5 * fps)))
+	eng.execute(res["follow_up"])
+	assert_false(Input.is_action_pressed("ui_accept"))
+	root.free()
+
+func test_input_event_release_ignores_hold() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_event", "kind": "key", "key": "A", "pressed": false, "hold_frames": 5})
+	assert_true(res["ok"])
+	assert_false(res.has("follow_up"), "a release cannot hold")
+	root.free()
+
+# --- input_action hold mode ---
+
+func test_input_action_hold_frames() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_action", "action": "ui_right", "mode": "hold", "frames": 10})
+	assert_true(res["ok"])
+	assert_true(Input.is_action_pressed("ui_right"))
+	assert_eq(res["follow_up_after_frames"], 10)
+	assert_eq(res["follow_up"]["mode"], "release")
+	eng.execute(res["follow_up"])
+	assert_false(Input.is_action_pressed("ui_right"))
+	root.free()
+
+func test_input_action_hold_seconds() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var fps := int(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
+	var res := eng.execute({"type": "input_action", "action": "ui_right", "mode": "hold", "seconds": 2.0})
+	assert_eq(res["follow_up_after_frames"], 2 * fps)
+	eng.execute(res["follow_up"])
+	root.free()
+
+func test_input_action_hold_without_duration_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_action", "action": "ui_right", "mode": "hold"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	assert_false(Input.is_action_pressed("ui_right"), "failed hold must not leave the action pressed")
 	root.free()
 
 func test_capture_frames_missing_dir_is_fatal() -> void:
@@ -408,6 +525,20 @@ func test_capture_texture_missing_out_is_fatal() -> void:
 	var eng := ScenarioEngine.new()
 	eng.set_root(root)
 	assert_false(eng.execute({"type": "capture_texture", "path": "Sub", "property": "position"})["ok"])
+	root.free()
+
+func test_input_event_nonpositive_hold_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "input_event", "kind": "key", "key": "Up", "hold_frames": 0})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	assert_false(Input.is_key_pressed(KEY_UP), "failed hold must not press the key")
+	var eng2 := ScenarioEngine.new()
+	eng2.set_root(root)
+	assert_false(eng2.execute({"type": "input_event", "kind": "action", "action": "ui_accept", "hold_seconds": -1.0})["ok"])
+	assert_false(Input.is_action_pressed("ui_accept"))
 	root.free()
 
 func test_capture_frames_reused_dir_applies_explicit_downscale() -> void:

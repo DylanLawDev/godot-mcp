@@ -10,6 +10,7 @@ extends RefCounted
 # records passed:false and the run continues.
 
 const NodeOps = preload("res://addons/godot_mcp/utils/node_ops.gd")
+const InputSynth = preload("res://addons/godot_mcp/runtime/input_synth.gd")
 const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const TextureDump = preload("res://addons/godot_mcp/utils/texture_dump.gd")
 
@@ -60,6 +61,8 @@ func execute(step: Dictionary) -> Dictionary:
 			return out
 		"input_action":
 			return _input_action(step)
+		"input_event":
+			return _input_event(step)
 		"set_property":
 			return _set_property(step)
 		"create_node":
@@ -124,8 +127,65 @@ func _input_action(step: Dictionary) -> Dictionary:
 			out["follow_up"] = {"type": "input_action", "action": action, "mode": "release"}
 			out["follow_up_after_frames"] = 1
 			return out
+		"hold":
+			# Press now, auto-release after a duration ("frames" or "seconds") —
+			# same follow_up mechanics as tap, but with a caller-chosen span.
+			var frames := _duration_frames(step)
+			if frames <= 0:
+				return _step_fail("input_action", "hold requires 'frames' or 'seconds' > 0")
+			Input.action_press(action, strength)
+			var out := _step_ok("input_action", "hold %s for %d frames" % [action, frames])
+			out["follow_up"] = {"type": "input_action", "action": action, "mode": "release"}
+			out["follow_up_after_frames"] = frames
+			return out
 		_:
 			return _step_fail("input_action", "Unknown input mode: " + mode)
+
+# Shared by hold-style steps: a duration given as "frames" (verbatim) or
+# "seconds" (converted at the physics tick rate, matching wait_seconds).
+func _duration_frames(step: Dictionary) -> int:
+	if step.has("frames"):
+		return int(step.get("frames", 0))
+	if step.has("seconds"):
+		var fps := int(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
+		return int(ceil(float(step.get("seconds", 0.0)) * fps))
+	return 0
+
+# Synthesizes a raw InputEvent (kind: key / mouse_button / mouse_motion / action)
+# and feeds it through Input.parse_input_event — the same path OS input takes.
+# Once the tree is iterating (the runner's case), the flush updates poll state
+# (is_key_pressed / is_action_pressed) AND routes the event through the root
+# Window to _input / _gui_input / _unhandled_input handlers, headless included.
+# Do NOT also Viewport.push_input here: that delivers every event twice.
+# "hold_frames"/"hold_seconds" on a press auto-releases via follow_up.
+func _input_event(step: Dictionary) -> Dictionary:
+	var built := InputSynth.build(step)
+	if not built["ok"]:
+		return _step_fail("input_event", built["error"])
+	var hold_spec := {}
+	if step.has("hold_frames"):
+		hold_spec["frames"] = step["hold_frames"]
+	elif step.has("hold_seconds"):
+		hold_spec["seconds"] = step["hold_seconds"]
+	var hold := _duration_frames(hold_spec)
+	var holdable := bool(step.get("pressed", true)) and str(step.get("kind", "")) != "mouse_motion"
+	# An explicitly requested hold on a holdable press must be a positive
+	# duration — a zero/negative one would silently skip the auto-release and
+	# leave the key/button/action stuck for the rest of the run. Validate
+	# BEFORE dispatch so the failed step presses nothing.
+	if holdable and not hold_spec.is_empty() and hold <= 0:
+		return _step_fail("input_event", "hold requires 'hold_frames' or 'hold_seconds' > 0")
+	Input.parse_input_event(built["event"])
+	Input.flush_buffered_events()
+	var out := _step_ok("input_event", built["detail"])
+	if hold > 0 and holdable:
+		var release := step.duplicate()
+		release.erase("hold_frames")
+		release.erase("hold_seconds")
+		release["pressed"] = false
+		out["follow_up"] = release
+		out["follow_up_after_frames"] = hold
+	return out
 
 func _set_property(step: Dictionary) -> Dictionary:
 	var node := NodeOps.resolve(root, str(step.get("path", "")))

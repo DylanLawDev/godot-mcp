@@ -172,21 +172,21 @@ addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/move_right.json /tmp
 A scenario is a JSON list of steps. Available step types:
 
 - `wait_frames` / `wait_seconds` — let the game tick
-- `input_action` — press/release an input-map action
+- `input_action` — press/release/tap/hold an input-map action
+- `input_event` — synthesize a raw key/mouse/action `InputEvent` (fires
+  `_input`/`_unhandled_input` and updates poll state, with optional auto-release
+  via `hold_frames`/`hold_seconds`)
 - `set_property` — change a live node's property
 - `create_node` / `delete_node` — manipulate the running tree
 - `call_method` — call a method on a node
 - `watch_signal` — record signal emissions
-<<<<<<< HEAD
 - `capture_frames` — save N consecutive rendered frames as numbered PNGs
   (optionally downscaled); run with `--render` to get real pixels
 - `set_paused` / `step_frames` — pause the game, then advance exactly one
   rendered frame at a time (optionally capturing after each step) for
   frame-by-frame diffs of temporal artifacts
-=======
 - `capture_texture` — dump a SubViewport render target or any `Texture2D`
   property of a live node to a PNG
->>>>>>> origin/main
 - `assert` — check a condition and pass/fail the run
 
 This runs separately from the editor (it's launched via the shell, not over
@@ -200,9 +200,7 @@ addons/godot_mcp/runtime/run_scenario.sh --render examples/scenarios/burst_captu
 The results JSON gains a `captures` manifest (one entry per output dir) listing
 every written frame file and its dimensions — ten consecutive frames make
 temporal artifacts like jitter or sawtooth edges obvious where a single
-screenshot can't. *Note: input is currently poll-observable only — raw
-key/mouse `InputEvent` synthesis and `_input` delivery are planned for a future
-version.*
+screenshot can't.
 
 ---
 

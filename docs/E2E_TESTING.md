@@ -197,13 +197,37 @@ cat /tmp/out.json
 should report `passed: true`: it holds `ui_right` for ~1s, asserts the node moved
 past x=100, and that `reached_goal` fired once.
 
-Step types: `wait_frames`, `wait_seconds`, `input_action` (modes `press`/`release`/`tap`),
+Step types: `wait_frames`, `wait_seconds`, `input_action` (modes `press`/`release`/`tap`/
+`hold` — `hold` takes `frames` or `seconds` and auto-releases), `input_event`,
 `set_property`, `create_node`, `delete_node`, `call_method`, `watch_signal`,
 `capture_frames`, `set_paused`, `step_frames`, `capture_texture`, and `assert`
-(kinds `property`, `node_exists`, `node_absent`, `in_group`, `signal_count`; ops
-`eq`/`ne`/`lt`/`le`/`gt`/`ge`). Input is action-based
-(project input map) and poll-observable (`Input.is_action_pressed`); it does not fire
-`_input`/`_unhandled_input`.
+(kinds `property`, `node_exists`, `node_absent`,
+`in_group`, `signal_count`; ops `eq`/`ne`/`lt`/`le`/`gt`/`ge`).
+
+`input_action` is poll-observable (`Input.is_action_pressed`) and does not fire
+`_input`/`_unhandled_input`. For that, use `input_event`, which synthesizes a raw
+`InputEvent` and feeds it through `Input.parse_input_event` — the same path OS input
+takes — so it updates poll state AND reaches `_input`/`_gui_input`/`_unhandled_input`,
+headless included. Kinds:
+
+- `key`: `{"kind": "key", "key": "Right", "pressed": true, "modifiers": ["ctrl"], "echo": false}`
+  (`key` accepts `OS.find_keycode_from_string` names — "A", "Left", "Escape", "F1" —
+  or the constant spelling "KEY_LEFT")
+- `mouse_button`: `{"kind": "mouse_button", "button": "left", "position": [12, 34], "pressed": true, "double_click": false}`
+  (buttons: `left`/`right`/`middle`/`wheel_up`/`wheel_down`/`wheel_left`/`wheel_right`/`xbutton1`/`xbutton2`)
+- `mouse_motion`: `{"kind": "mouse_motion", "position": [40, 40], "relative": [5, 0], "velocity": [100, 0]}`
+- `action`: `{"kind": "action", "action": "jump", "pressed": true, "strength": 1.0}`
+
+Any pressed `input_event` (except `mouse_motion`) accepts `hold_frames` or
+`hold_seconds` to auto-release after that duration.
+
+`examples/scenarios/input_events.json` against `examples/scenes/input_events_demo.tscn`
+exercises the whole surface — run it after runner changes and expect `passed: true`
+and exit 0:
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh examples/scenarios/input_events.json /tmp/input_events.json
+```
 
 ### Burst frame capture
 
@@ -287,4 +311,5 @@ against an open scene containing a SubViewport named `View`:
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"capture_texture","arguments":{"path":"View","out_path":"examples/scratch/view.png"}}}'
+
 ```

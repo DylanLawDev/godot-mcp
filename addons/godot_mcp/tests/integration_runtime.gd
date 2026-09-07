@@ -62,6 +62,14 @@ func _main() -> void:
 			await process_frame
 		if not timed.value.ok:
 			failures.append(timed.value)
+		if rendered:
+			var first_resize = tools.resize_game_window({"session_id": id, "width": 700, "height": 500})
+			var overlapping_resize = tools.resize_game_window({"session_id": id, "width": 600, "height": 400})
+			while not first_resize.done or not overlapping_resize.done:
+				manager.poll()
+				await process_frame
+			if not first_resize.value.ok or overlapping_resize.value.ok:
+				failures.append("overlapping resize was not rejected")
 		for dimensions in [[800, 600], [480, 360]]:
 			var resized = tools.resize_game_window({"session_id": id, "width": dimensions[0], "height": dimensions[1]})
 			while not resized.done:

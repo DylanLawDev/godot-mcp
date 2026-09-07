@@ -1,5 +1,6 @@
 extends RefCounted
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+const MAX_SAMPLE_BYTES := 4 * 1024 * 1024
 const UNITS := {"frame_time_ms": "ms", "process_time_ms": "ms", "physics_time_ms": "ms", "static_memory_bytes": "bytes", "object_count": "count", "node_count": "count", "orphan_node_count": "count"}
 var bridge: Node
 var _active
@@ -35,6 +36,8 @@ func sample(args: Dictionary):
 
 func _collect(task, args: Dictionary, request_id: String) -> void:
 	var samples := []
+	var budget := {"bytes": 2}
+	var truncated := false
 	var unavailable := []
 	var units := UNITS.duplicate()
 	var names := []
@@ -60,12 +63,14 @@ func _collect(task, args: Dictionary, request_id: String) -> void:
 				elif name not in unavailable:
 					unavailable.append(name)
 			var sample := {"elapsed_ms": now - started, "values": values}
-			samples.append(sample)
+			if not append_bounded(samples, sample, budget):
+				truncated = true
+				break
 			bridge._send({"kind": "progress", "request_id": request_id, "sample": sample})
 			next = now + interval
 		await bridge.get_tree().process_frame
 	if not task.done:
-		task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "samples": samples, "summary": summarize(samples), "units": units, "unavailable_monitors": unavailable, "elapsed_ms": Time.get_ticks_msec() - started}})
+		task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "truncated": truncated, "sample_limit_bytes": MAX_SAMPLE_BYTES, "samples": samples, "summary": summarize(samples), "units": units, "unavailable_monitors": unavailable, "elapsed_ms": Time.get_ticks_msec() - started}})
 	if _active == task:
 		_active = null
 
@@ -85,3 +90,12 @@ static func summarize(samples: Array) -> Dictionary:
 			total += value
 		out[name] = {"count": values.size(), "min": values[0], "max": values[-1], "mean": total / values.size(), "p95": values[int(ceil(values.size() * 0.95)) - 1]}
 	return out
+
+# Reserve ample envelope space for summaries and doubly encoded partial errors.
+static func append_bounded(samples: Array, sample: Dictionary, budget: Dictionary) -> bool:
+	var bytes := JSON.stringify(sample).to_utf8_buffer().size() + 1
+	if int(budget.bytes) + bytes > MAX_SAMPLE_BYTES:
+		return false
+	budget.bytes += bytes
+	samples.append(sample)
+	return true

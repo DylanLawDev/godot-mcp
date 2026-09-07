@@ -373,3 +373,6 @@ requested duration. Missing custom timings are never inferred. The performance
 fixture registers deterministic demonstration values in milliseconds; real games
 must register their own measured `Performance` custom monitors. Interrupted calls
 return an error containing JSON with `partial:true` and received samples.
+
+Performance sample data is capped at 4 MiB; oversized requests finish early with
+`truncated:true`, preserving collected samples instead of failing the bridge limit.

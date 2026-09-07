@@ -8,6 +8,11 @@ static func parse(text: String) -> Dictionary:
 	if typeof(data) != TYPE_DICTIONARY:
 		return {"ok": false, "id": null, "method": "", "params": {}, "is_notification": false}
 	var id = data.get("id", null)
+	# Godot parses JSON numbers as floats. Restore integral IDs so strict MCP
+	# clients receive e.g. 1, not 1.0, in both success and error responses.
+	# Only convert within the exact integer range of a JSON-parsed double.
+	if typeof(id) == TYPE_FLOAT and abs(id) <= 9007199254740991.0 and id == floor(id):
+		id = int(id)
 	var has_id: bool = data.has("id")
 	var params = data.get("params", {})
 	if typeof(params) != TYPE_DICTIONARY:

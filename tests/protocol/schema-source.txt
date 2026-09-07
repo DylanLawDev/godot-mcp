@@ -1,0 +1,5 @@
+MCP schema revision: 2026-07-28
+Repository: https://github.com/modelcontextprotocol/modelcontextprotocol
+Commit: e76e9c572c6f2bfcb730357101acc90f2f802e02
+File: schema/2026-07-28/schema.json
+SHA-256: ef70b61f99b6d2e5e3b46863822eab08dff6a45bedc7a08914e0e5b133f40203

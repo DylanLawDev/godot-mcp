@@ -1,0 +1,9 @@
+{
+  "scene": "res://examples/scenes/runner_demo.tscn",
+  "steps": [
+    { "type": "input_action", "action": "ui_right", "mode": "press" },
+    { "type": "capture_frames", "count": 10, "dir": "user://captures/burst", "downscale": 2 },
+    { "type": "input_action", "action": "ui_right", "mode": "release" },
+    { "type": "assert", "kind": "property", "path": ".", "property": "position:x", "op": "gt", "value": "0" }
+  ]
+}

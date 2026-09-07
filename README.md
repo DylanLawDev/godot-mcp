@@ -180,13 +180,27 @@ A scenario is a JSON list of steps. Available step types:
 - `create_node` / `delete_node` — manipulate the running tree
 - `call_method` — call a method on a node
 - `watch_signal` — record signal emissions
+- `capture_frames` — save N consecutive rendered frames as numbered PNGs
+  (optionally downscaled); run with `--render` to get real pixels
+- `set_paused` / `step_frames` — pause the game, then advance exactly one
+  rendered frame at a time (optionally capturing after each step) for
+  frame-by-frame diffs of temporal artifacts
 - `capture_texture` — dump a SubViewport render target or any `Texture2D`
   property of a live node to a PNG
 - `assert` — check a condition and pass/fail the run
 
 This runs separately from the editor (it's launched via the shell, not over
-MCP), so you can use it in CI. *Note: in-game screenshots are planned for a
-future version.*
+MCP), so you can use it in CI. Because a headless process renders nothing,
+`capture_frames` needs the windowed mode:
+
+```bash
+addons/godot_mcp/runtime/run_scenario.sh --render examples/scenarios/burst_capture.json /tmp/out.json
+```
+
+The results JSON gains a `captures` manifest (one entry per output dir) listing
+every written frame file and its dimensions — ten consecutive frames make
+temporal artifacts like jitter or sawtooth edges obvious where a single
+screenshot can't.
 
 ---
 

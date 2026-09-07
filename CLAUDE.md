@@ -69,4 +69,10 @@ results JSON. It is launched via Bash (`runtime/run_scenario.sh`), not over MCP,
 node-manipulation logic with the editor tools through `utils/node_ops.gd`. Input can be
 action-based (`input_action`, poll-observable, with press/release/tap/hold modes) or raw
 `InputEvent` synthesis (`input_event` via `runtime/input_synth.gd`, which also fires
-`_input`/`_unhandled_input`); in-game screenshots are deferred (v2).
+`_input`/`_unhandled_input`). The `capture_frames`
+step (`runtime/frame_capture.gd`) saves consecutive rendered frames as PNGs; it needs the
+windowed `--render` mode of `run_scenario.sh` (headless renders nothing and records
+per-frame manifest errors instead). `set_paused`/`step_frames` pause the tree and advance
+exactly one rendered frame per step (the runner aligns to a `process_frame` boundary while
+paused, then unpauses across exactly one process phase per step — don't "simplify" that
+loop), optionally capturing after each step.

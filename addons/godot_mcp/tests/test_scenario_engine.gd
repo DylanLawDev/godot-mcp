@@ -258,6 +258,44 @@ func test_input_event_invalid_is_fatal() -> void:
 	assert_true(res.get("fatal", false))
 	root.free()
 
+# --- capture_frames step ---
+# The engine only validates and prepares the destination; the runner owns the
+# viewport grabbing (E2E: examples/scenarios/burst_capture.json with --render).
+
+func test_capture_frames_returns_pump_plan() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_frames", "count": 5, "dir": "user://_engine_capture_test", "downscale": 2})
+	assert_true(res["ok"])
+	assert_eq(res["capture_frames"], 5)
+	assert_eq(res["capture_dir"], "user://_engine_capture_test")
+	var cap = eng.capture_for("user://_engine_capture_test")
+	assert_ne(cap, null)
+	assert_eq(cap.downscale, 2)
+	DirAccess.remove_absolute("user://_engine_capture_test")
+	root.free()
+
+func test_capture_frames_reuses_capture_per_dir() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_test2"})
+	var first = eng.capture_for("user://_engine_capture_test2")
+	eng.execute({"type": "capture_frames", "count": 3, "dir": "user://_engine_capture_test2"})
+	assert_eq(eng.capture_for("user://_engine_capture_test2"), first, "same dir must keep one frame sequence")
+	DirAccess.remove_absolute("user://_engine_capture_test2")
+	root.free()
+
+func test_capture_frames_bad_count_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "capture_frames", "count": 0, "dir": "user://x"})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
 func test_input_event_hold_schedules_release() -> void:
 	var root := _make_root()
 	var eng := ScenarioEngine.new()
@@ -328,6 +366,121 @@ func test_input_action_hold_without_duration_is_fatal() -> void:
 	assert_false(Input.is_action_pressed("ui_right"), "failed hold must not leave the action pressed")
 	root.free()
 
+func test_capture_frames_missing_dir_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_false(eng.execute({"type": "capture_frames", "count": 1})["ok"])
+	root.free()
+
+func test_results_include_capture_manifests() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var r0 := eng.results()
+	assert_false(r0.has("captures"), "no captures key without capture steps")
+	eng.execute({"type": "capture_frames", "count": 2, "dir": "user://_engine_capture_test3"})
+	var r := eng.results()
+	assert_eq((r["captures"] as Array).size(), 1)
+	assert_eq(r["captures"][0]["dir"], "user://_engine_capture_test3")
+	DirAccess.remove_absolute("user://_engine_capture_test3")
+	root.free()
+
+# --- set_paused / step_frames (frame stepping) ---
+# The exact one-_process-per-step advance is runner behavior, proven by the
+# examples/scenarios/frame_step.json E2E scenario; here we cover the engine's
+# validation, pause wiring, and pump-plan contract.
+
+func test_set_paused_toggles_tree_pause() -> void:
+	# The engine pauses the tree injected via set_tree (the runner injects
+	# itself); this test suite IS the SceneTree being paused.
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.set_tree(self)
+	assert_true(eng.execute({"type": "set_paused", "paused": true})["ok"])
+	assert_true(paused)
+	assert_true(eng.execute({"type": "set_paused", "paused": false})["ok"])
+	assert_false(paused)
+	root.free()
+
+func test_set_paused_defaults_to_true() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.set_tree(self)
+	eng.execute({"type": "set_paused"})
+	assert_true(paused)
+	paused = false
+	root.free()
+
+func test_set_paused_without_tree_is_fatal() -> void:
+	# No set_tree injection and no registered main loop (we are still in _init).
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "set_paused", "paused": true})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_step_frames_returns_pump_plan() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "step_frames", "count": 4})
+	assert_true(res["ok"])
+	assert_eq(res["step_frames"], 4)
+	assert_false(res.has("capture_dir"), "no capture without dir")
+	root.free()
+
+func test_step_frames_defaults_to_one() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_eq(eng.execute({"type": "step_frames"})["step_frames"], 1)
+	root.free()
+
+func test_step_frames_with_capture_dir_prepares_capture() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "step_frames", "count": 2, "dir": "user://_engine_step_test", "downscale": 3})
+	assert_true(res["ok"])
+	assert_eq(res["capture_dir"], "user://_engine_step_test")
+	var cap = eng.capture_for("user://_engine_step_test")
+	assert_ne(cap, null)
+	assert_eq(cap.downscale, 3)
+	DirAccess.remove_absolute("user://_engine_step_test")
+	root.free()
+
+func test_step_frames_shares_dir_sequence_with_capture_frames() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_step_test2"})
+	var first = eng.capture_for("user://_engine_step_test2")
+	eng.execute({"type": "step_frames", "count": 1, "dir": "user://_engine_step_test2"})
+	assert_eq(eng.capture_for("user://_engine_step_test2"), first)
+	DirAccess.remove_absolute("user://_engine_step_test2")
+	root.free()
+
+func test_step_frames_bad_count_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	var res := eng.execute({"type": "step_frames", "count": 0})
+	assert_false(res["ok"])
+	assert_true(res.get("fatal", false))
+	root.free()
+
+func test_step_frames_blank_dir_is_fatal() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	assert_false(eng.execute({"type": "step_frames", "count": 1, "dir": "  "})["ok"])
+	root.free()
+
 # --- capture_texture step (texture readback) ---
 
 func test_capture_texture_writes_png_from_image_texture() -> void:
@@ -386,4 +539,24 @@ func test_input_event_nonpositive_hold_is_fatal() -> void:
 	eng2.set_root(root)
 	assert_false(eng2.execute({"type": "input_event", "kind": "action", "action": "ui_accept", "hold_seconds": -1.0})["ok"])
 	assert_false(Input.is_action_pressed("ui_accept"))
+	root.free()
+
+func test_capture_frames_reused_dir_applies_explicit_downscale() -> void:
+	var root := _make_root()
+	var eng := ScenarioEngine.new()
+	eng.set_root(root)
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 2})
+	var cap = eng.capture_for("user://_engine_capture_ds")
+	assert_eq(cap.downscale, 2)
+	# Omitted downscale keeps the earlier choice...
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds"})
+	assert_eq(cap.downscale, 2, "omitted downscale must not reset a reused dir")
+	# ...while an explicit one applies to the remaining frames (same sequence).
+	eng.execute({"type": "capture_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 4})
+	assert_eq(cap.downscale, 4)
+	assert_eq(eng.capture_for("user://_engine_capture_ds"), cap, "reuse must keep one sequence")
+	# step_frames shares the same rule.
+	eng.execute({"type": "step_frames", "count": 1, "dir": "user://_engine_capture_ds", "downscale": 3})
+	assert_eq(cap.downscale, 3)
+	DirAccess.remove_absolute("user://_engine_capture_ds")
 	root.free()

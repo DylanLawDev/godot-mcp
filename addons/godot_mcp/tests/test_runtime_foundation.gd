@@ -165,3 +165,48 @@ func test_stop_owned_session_forced_and_idempotent() -> void:
 	manager.stop_session(id, 0)
 	assert_true(jobs.active(newer.value.session_id))
 	manager.shutdown()
+
+func test_max_frame_followed_by_coalesced_heartbeat() -> void:
+	var frame := Wire.encode({"data": "x".repeat(Wire.MAX_BYTES - 11)})
+	assert_eq(frame.size(), Wire.MAX_BYTES + 4)
+	var wire := Wire.new()
+	assert_eq(wire.feed(frame.slice(0, frame.size() - 20)).size(), 0)
+	var messages := wire.feed(frame.slice(frame.size() - 20) + Wire.encode({"kind": "heartbeat"}))
+	assert_eq(wire.error, "")
+	assert_eq(messages.size(), 2)
+	assert_eq(messages[1].kind, "heartbeat")
+
+func test_utf8_multibyte_boundary_is_lossless() -> void:
+	var jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd")
+	var original := "hello π 😀 世界"
+	var bytes := original.to_utf8_buffer()
+	for split in range(1, bytes.size()):
+		var first: Dictionary = jobs.decode_utf8(bytes.slice(0, split))
+		var second: Dictionary = jobs.decode_utf8(first.tail + bytes.slice(split))
+		assert_eq(first.text + second.text, original)
+		assert_true(second.tail.is_empty())
+
+func test_exited_process_drains_more_than_one_poll_of_output() -> void:
+	var jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd").new()
+	var path := "user://runtime_pipe_fixture.txt"
+	var content := "x".repeat(100000) + "FINAL_DIAGNOSTIC_世界"
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(content)
+	file.close()
+	jobs.records["test"] = {"sequence": 0, "output": [], "state": "running"}
+	# Inject the exited-process state; the regular file supplies more buffered
+	# bytes than a single per-frame draining budget.
+	jobs.process_is_running = func(_pid): return false
+	jobs.process_exit_code = func(_pid): return 0
+	jobs._handles["test"] = {"pid": 2147483647, "stdio": FileAccess.open(path, FileAccess.READ), "stderr": null}
+	jobs.poll()
+	assert_true(jobs.active("test"), "must not discard the unread tail on exit")
+	for _i in 10:
+		jobs.poll()
+	assert_false(jobs.active("test"))
+	var actual := ""
+	for entry in jobs.records.test.output:
+		actual += entry.text
+	assert_eq(actual, content)
+	DirAccess.remove_absolute(path)
+	jobs.shutdown()

@@ -383,3 +383,6 @@ Copies exclude `.git`, `.godot`, common build directories, configured export fil
 and managed artifacts. Symbolic links are rejected with an explicit error. Normal
 completion removes the copy; disabling the plugin mid-job can retain an unfinished
 copy in the job artifact directory. One scenario/validation/export job runs at a time.
+
+Performance sample data is capped at 4 MiB; oversized requests finish early with
+`truncated:true`, preserving collected samples instead of failing the bridge limit.

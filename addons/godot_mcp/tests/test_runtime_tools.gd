@@ -34,3 +34,22 @@ func test_invalid_run_arguments_do_not_launch() -> void:
 	for args in [{"scene": ""}, {"scene": 3}, {"scene": "../outside.tscn"}, {"scene": "/tmp/outside.tscn"}, {"scene": "missing.tscn"}, {"scene": "examples/scripts/player.gd"}, {"headless": "true"}, {"startup_timeout_seconds": 0}, {"startup_timeout_seconds": 1.5}, {"startup_timeout_seconds": "5"}]:
 		assert_false(tools.run_project(args).ok, str(args))
 	assert_eq(fake.calls.size(), 0)
+
+func test_status_idle_default_explicit_and_retained() -> void:
+	var sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd").new()
+	var tools := Tools.new(sessions)
+	assert_eq(tools.get_run_status({}).value.state, "idle")
+	sessions.sessions.old = {"state": "exited", "session_id": "old", "exit_code": null}
+	sessions.latest_id = "old"
+	assert_eq(tools.get_run_status({}).value.session_id, "old")
+	sessions.sessions.new = {"state": "running", "session_id": "new", "bridge_connected": false}
+	sessions.active_id = "new"
+	assert_eq(tools.get_run_status({}).value.session_id, "new")
+	var old: Dictionary = tools.get_run_status({"session_id": "old"}).value
+	assert_eq(old.state, "exited")
+	assert_eq(old.active_session_id, "new")
+	assert_eq(old.exit_code, null)
+	assert_eq(tools.get_run_status({}).value.state, "running")
+	for args in [{"session_id": "unknown"}, {"session_id": ""}, {"session_id": 42}]:
+		assert_false(tools.get_run_status(args).ok)
+	sessions.shutdown()

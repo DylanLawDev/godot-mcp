@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **41 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **42 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -276,3 +276,9 @@ For example, `{"scene":"res://examples/scenes/runner_demo.tscn","headless":true}
 returns a `session_id` and `state:"starting"`. A second active run is rejected.
 Readiness and startup failures are recorded asynchronously; this does not save
 unsaved editor changes. Headless runs cannot capture rendered frames.
+
+`get_run_status({session_id?})` reads readiness, PID, scene, bridge connectivity,
+capabilities, timestamps, nullable exit code and diagnostic output. Omit the ID
+for the active or most recent run; with no runs it returns `state:"idle"`.
+For example, `{"session_id":"<run_project result>"}` selects that exact run even
+after exit. A disconnected bridge does not by itself mean the game crashed.

@@ -325,3 +325,7 @@ See [RUNTIME_BRIDGE.md](RUNTIME_BRIDGE.md) for the wire and deferred handler sea
 Call `run_project` with `scene:"res://examples/scenes/runner_demo.tscn"` and
 `headless:true`; expect a starting session ID. A second launch must report the
 active session rather than replacing it. Disabling the addon must stop its child.
+
+Poll `get_run_status` for the launched ID until `running` and `bridge_connected`.
+Run a missing/broken scene and confirm startup failure diagnostics; the result
+must never be substituted with a newer session when an explicit old ID is used.

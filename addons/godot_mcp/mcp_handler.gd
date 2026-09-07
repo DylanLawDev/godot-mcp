@@ -36,6 +36,22 @@ func handle_message(text: String) -> String:
 		return ""
 	return JSON.stringify(resp)
 
+# Production transport can retain the connection while a runtime operation completes.
+func handle_message_async(text: String) -> Variant:
+	var req := JsonRpc.parse(text)
+	if not req["ok"] or req.get("method") != "tools/call":
+		return handle_message(text)
+	if req["is_notification"]:
+		return ""
+	var params: Dictionary = req["params"]
+	var args: Variant = params.get("arguments", {})
+	if not args is Dictionary or not params.get("name", "") is String:
+		return JSON.stringify(JsonRpc.error(req.id, -32602, "Invalid tool arguments"))
+	var result: Variant = _registry.call_tool_async(params.get("name", ""), args)
+	if result is ToolRegistry.Deferred:
+		return result.transform(func(value): return JSON.stringify(JsonRpc.result(req.id, value)))
+	return JSON.stringify(JsonRpc.result(req.id, result))
+
 func _handle(req: Dictionary):
 	var method: String = req["method"]
 	var id = req["id"]

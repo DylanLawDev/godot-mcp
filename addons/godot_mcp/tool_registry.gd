@@ -22,14 +22,30 @@ func list_tools() -> Array:
 		})
 	return out
 
-# Returns the MCP tools/call result: {content: [{type:"text", text}], isError}.
+const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+
+# Legacy synchronous seam; deferred callers use call_tool_async instead.
 func call_tool(name: String, args: Dictionary) -> Dictionary:
+	var result: Variant = call_tool_async(name, args)
+	if result is Deferred:
+		result.cancel("This tool requires deferred transport dispatch")
+		return result.value
+	return result
+
+func call_tool_async(name: String, args: Dictionary) -> Variant:
 	for t in _tools:
 		if t["name"] == name:
-			var r: Dictionary = t["handler"].call(args)
-			if r.get("ok", false):
-				var val = r.get("value")
-				var text: String = val if typeof(val) == TYPE_STRING else JSON.stringify(val)
-				return {"content": [{"type": "text", "text": text}], "isError": false}
-			return {"content": [{"type": "text", "text": str(r.get("error", "unknown error"))}], "isError": true}
-	return {"content": [{"type": "text", "text": "Unknown tool: " + name}], "isError": true}
+			var result: Variant = t["handler"].call(args)
+			if result is Deferred:
+				return result.transform(Callable(self, "format_result"))
+			return format_result(result)
+	return format_result({"ok": false, "error": "Unknown tool: " + name})
+
+static func format_result(result: Variant) -> Dictionary:
+	if not result is Dictionary:
+		return {"content": [{"type": "text", "text": "Invalid tool result"}], "isError": true}
+	if result.get("ok", false):
+		var val: Variant = result.get("value")
+		var text: String = val if typeof(val) == TYPE_STRING else JSON.stringify(val)
+		return {"content": [{"type": "text", "text": text}], "isError": false}
+	return {"content": [{"type": "text", "text": str(result.get("error", "unknown error"))}], "isError": true}

@@ -1,6 +1,7 @@
 @tool
 extends EditorPlugin
 
+const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
 const HttpServer = preload("res://addons/godot_mcp/http_server.gd")
 const McpHandler = preload("res://addons/godot_mcp/mcp_handler.gd")
 const OutputCapture = preload("res://addons/godot_mcp/tools/output_capture.gd")
@@ -12,6 +13,7 @@ const DEFAULT_PORT := 8765
 
 var _server
 var _handler
+var _runtime
 var _capture
 
 func _enter_tree() -> void:
@@ -19,8 +21,10 @@ func _enter_tree() -> void:
 	_capture = OutputCapture.new()
 	OS.add_logger(_capture)
 	Engine.set_meta(CAPTURE_META_KEY, _capture)
+	_runtime = Sessions.new()
+	Engine.set_meta("GodotMCPRuntime", _runtime)
 	_handler = McpHandler.new()
-	_server = HttpServer.new(Callable(_handler, "handle_message"))
+	_server = HttpServer.new(Callable(_handler, "handle_message_async"))
 	var port := _resolve_port()
 	var err: int = _server.start(port)
 	if err == OK:
@@ -36,6 +40,11 @@ func _exit_tree() -> void:
 		_server.stop()
 	_server = null
 	_handler = null
+	if _runtime != null:
+		_runtime.shutdown()
+	_runtime = null
+	if Engine.has_meta("GodotMCPRuntime"):
+		Engine.remove_meta("GodotMCPRuntime")
 	if _capture != null:
 		OS.remove_logger(_capture)
 		_capture = null
@@ -45,6 +54,8 @@ func _exit_tree() -> void:
 		Engine.remove_meta(META_KEY)
 
 func _process(_delta: float) -> void:
+	if _runtime != null:
+		_runtime.poll()
 	if _server != null and _server.is_listening():
 		_server.poll()
 

@@ -24,3 +24,10 @@ func test_key_alias_release_removes_canonical_hold() -> void:
 	assert_eq(sequence._held.size(), 0)
 	assert_false(Input.is_key_pressed(KEY_A))
 	sequence.release_all()
+
+func test_wheel_events_are_momentary() -> void:
+	assert_false(Sequence.validate([{"kind": "mouse_button", "button": "wheel_up", "hold_frames": 1}]).ok)
+	var sequence := Sequence.new(null)
+	assert_true(sequence._dispatch({"kind": "mouse_button", "button": "wheel_up"}).ok)
+	assert_eq(sequence._held.size(), 0)
+	sequence.release_all()

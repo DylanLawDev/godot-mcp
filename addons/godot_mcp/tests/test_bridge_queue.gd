@@ -30,3 +30,17 @@ func test_unsendable_reply_disconnects_instead_of_disappearing() -> void:
 	assert_false(bridge._reply("request", {"ok": true}))
 	assert_eq(bridge._peer.get_status(), StreamPeerTCP.STATUS_NONE)
 	bridge.free()
+
+func test_quit_prevents_later_commands_in_same_batch() -> void:
+	var bridge = preload("res://addons/godot_mcp/runtime/game_bridge.gd").new()
+	bridge.session_id = "test"
+	bridge._accepted = true
+	var state := {"called": false}
+	bridge.handlers["mutate"] = func(_args):
+		state.called = true
+		return {"ok": true}
+	bridge._receive({"session_id": "test", "request_id": "1", "command": "quit", "args": {}})
+	bridge._receive({"session_id": "test", "request_id": "2", "command": "mutate", "args": {}})
+	assert_true(bridge._quitting)
+	assert_false(state.called)
+	bridge.free()

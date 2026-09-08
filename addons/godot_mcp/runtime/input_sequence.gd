@@ -99,8 +99,7 @@ func _run(task, events: Array, align_physics: bool) -> void:
 				await bridge.get_tree().physics_frame
 				if task.done:
 					return
-			var release: Dictionary = item.duplicate(true)
-			release.pressed = false
+			var release := release_item(item)
 			_dispatch(release)
 	task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "applied_count": applied, "completed_frame": Engine.get_physics_frames()}})
 
@@ -129,8 +128,7 @@ func _dispatch(item: Dictionary) -> Dictionary:
 
 func release_all() -> void:
 	for item in _held.values():
-		var release: Dictionary = item.duplicate(true)
-		release.pressed = false
+		var release := release_item(item)
 		var built := Synth.build(release)
 		if built.ok:
 			Input.parse_input_event(built.event)
@@ -149,3 +147,10 @@ static func timeout_for_events(events: Array, ticks_per_second: float) -> float:
 				if typeof(count) in [TYPE_INT, TYPE_FLOAT] and is_finite(count):
 					frames += int(clampf(count, 0, 600))
 	return timeout_for_frames(frames, ticks_per_second)
+
+static func release_item(item: Dictionary) -> Dictionary:
+	var release: Dictionary = item.duplicate(true)
+	release.pressed = false
+	release.double_click = false
+	release.echo = false
+	return release

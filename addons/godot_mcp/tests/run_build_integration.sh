@@ -21,6 +21,7 @@ SCENE
 expected=completed
 case "${1:-clean}" in
   clean) printf 'extends Node\nfunc _ready():\n\tpush_warning("fixture warning remains nonfatal")\n' > "$fixture_dir/fixture.gd" ;;
+  stdout_error_prefix) printf 'extends Node\nfunc _ready():\n\tprint("ERROR: recovered condition")\n\tprint("SCRIPT ERROR: documentation example")\n' > "$fixture_dir/fixture.gd" ;;
   teardown_error) printf 'extends Node\nfunc _exit_tree():\n\tprinterr("fixture teardown failure")\n' > "$fixture_dir/fixture.gd"; expected=failed ;;
   colored) printf 'extends Node\nfunc _ready():\n\tprint(String.chr(27) + "[31mcolored" + String.chr(27) + "[0m")\n' > "$fixture_dir/fixture.gd" ;;
   stderr) printf 'extends Node\nfunc _ready():\n\tprinterr("fixture stderr failure")\n' > "$fixture_dir/fixture.gd"; expected=failed ;;

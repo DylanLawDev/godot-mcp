@@ -82,7 +82,10 @@ func poll() -> void:
 	var report: Variant = null
 	if job.stage == "startup":
 		report = _startup_report(job)
-	if code == null or code != 0 or process.get("engine_errors", false) or output_has_errors(process.get("output", [])):
+	# Startup has a structured logger verdict, so ordinary stdout must not
+	# be interpreted as an engine failure based on its wording.
+	var output_failed: bool = job.stage != "startup" and (process.get("engine_errors", false) or output_has_errors(process.get("output", [])))
+	if code == null or code != 0 or output_failed:
 		_finish(false, "Godot " + job.stage + " failed; inspect stage diagnostics")
 		return
 	job.stages[-1].state = "passed"

@@ -92,6 +92,8 @@ class FakeJobs:
 	func active(id): return running.has(id)
 	func terminate(id, reason = "stopped"):
 		if records.has(id):
+			if running.has(id):
+				records[id]["kill_sent"] = true
 			running.erase(id)
 			records[id].state = "failed"
 			records[id].termination_reason = reason
@@ -260,4 +262,22 @@ func test_failed_quit_send_can_retry_during_grace() -> void:
 	peer.fail_writes = false
 	manager._poll_stops()
 	assert_true(manager._stops[id].quit_sent)
+	manager.shutdown()
+
+class DrainingJobs extends FakeJobs:
+	func terminate(_id, _reason = "stopped"): return true
+func test_dead_child_with_buffered_logs_is_not_reported_forced() -> void:
+	var jobs := DrainingJobs.new()
+	var manager := Sessions.new(jobs)
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var stop = manager.stop_session(id, 0)
+	manager._poll_stops()
+	assert_false(manager._stops[id].forced)
+	jobs.running.erase(id)
+	jobs.records[id].state = "exited"
+	jobs.records[id]["exit_code"] = 0
+	manager.poll()
+	assert_true(stop.done)
+	assert_true(stop.value.ok)
+	assert_false(stop.value.value.forced)
 	manager.shutdown()

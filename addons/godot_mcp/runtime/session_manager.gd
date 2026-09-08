@@ -108,8 +108,11 @@ func poll() -> void:
 			if read[0] != OK:
 				_drop(item)
 				continue
+			_note_activity(item, read[1].size())
 			for message in item.wire.feed(read[1]):
 				_receive(item, message)
+				if item.get("_dropped", false):
+					break
 			if item.wire.error != "":
 				_drop(item)
 	for rid in _pending.keys():
@@ -142,6 +145,8 @@ func poll() -> void:
 				sessions.erase(_history.pop_front())
 
 func _receive(item: Dictionary, message: Dictionary) -> void:
+	if item.get("_dropped", false):
+		return
 	var id: String = item.id
 	if id == "":
 		id = str(message.get("session_id", ""))
@@ -179,6 +184,9 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 			_drop(item)
 
 func _drop(item: Dictionary) -> void:
+	if item.get("_dropped", false):
+		return
+	item["_dropped"] = true
 	item.peer.disconnect_from_host()
 	_peers.erase(item)
 	var id: String = item.id
@@ -209,3 +217,10 @@ func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: flo
 		jobs.records[id]["deadline_msec"] = Time.get_ticks_msec() + int(timeout_seconds * 1000)
 		jobs.records[id]["artifact_dir"] = artifact_dir(id)
 	return result
+
+func _note_activity(item: Dictionary, bytes: int) -> void:
+	var id: String = item.get("id", "")
+	if bytes > 0 and id != "" and sessions.has(id):
+		sessions[id]._heartbeat = Time.get_ticks_msec()
+		if sessions[id].state in ["running", "stopping"]:
+			sessions[id].bridge_connected = true

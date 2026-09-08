@@ -2,6 +2,12 @@ extends SceneTree
 const Capture = preload("res://addons/godot_mcp/tools/output_capture.gd")
 class ValidationLogger extends Capture:
 	var failures := 0
+	func _log_message(message, error) -> void:
+		super._log_message(message, error)
+		if error:
+			_mutex.lock()
+			failures += 1
+			_mutex.unlock()
 	func _log_error(function, file, line, code, rationale, notify, error_type, backtraces) -> void:
 		super._log_error(function, file, line, code, rationale, notify, error_type, backtraces)
 		_mutex.lock()

@@ -38,11 +38,15 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 	var marker := FileAccess.open(source.path_join(".godot/marker"), FileAccess.WRITE)
 	marker.store_string("unchanged")
 	marker.close()
+	if OS.get_name() != "Windows":
+		FileAccess.set_unix_permissions(source.path_join("project.godot"), 0x1ed)
 	var hash := FileAccess.get_sha256(source.path_join("project.godot"))
 	var copy := Snapshot.new(source, target)
 	while not copy.done:
 		copy.poll()
 	assert_eq(copy.error, "")
+	if OS.get_name() != "Windows":
+		assert_eq(FileAccess.get_unix_permissions(target.path_join("project.godot")), 0x1ed)
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".godot")))
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".git")))
 	assert_eq(Snapshot.disable_mcp(target.path_join("project.godot")), OK)
@@ -59,3 +63,11 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 
 func test_logs_are_json_safe_without_raw_ansi() -> void:
 	assert_eq(Pipeline.clean_log(String.chr(27) + "[90mtext" + String.chr(27) + "[0m\n"), "text\n")
+
+func test_validation_logger_counts_stderr_but_not_warnings() -> void:
+	var logger = preload("res://addons/godot_mcp/runtime/validation_bootstrap.gd").ValidationLogger.new()
+	logger._log_message("ordinary", false)
+	logger._log_error("fixture", "fixture.gd", 1, "warning", "", false, Logger.ERROR_TYPE_WARNING, [])
+	assert_eq(logger.failures, 0)
+	logger._log_message("stderr failure", true)
+	assert_eq(logger.failures, 1)

@@ -177,13 +177,13 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 	var s: Dictionary = sessions[id]
 	match message.get("kind", ""):
 		"ready":
-			s.state = "running"
+			s.state = "stopping" if _stops.has(id) else "running"
 			s.bridge_connected = true
 			s.capabilities = message.get("capabilities", {})
 			s._heartbeat = Time.get_ticks_msec()
 		"heartbeat":
 			s._heartbeat = Time.get_ticks_msec()
-			s.bridge_connected = s.state == "running"
+			s.bridge_connected = s.state in ["running", "stopping"]
 		"errors":
 			var batch: Variant = message.get("batch")
 			if not batch is Dictionary or not batch.get("entries") is Array or batch.entries.size() > 100:
@@ -268,11 +268,12 @@ func stop_session(id: String, grace_seconds: float):
 	for rid in _pending.keys():
 		if _pending.has(rid) and _pending[rid].session_id == id:
 			_pending[rid].task.cancel("Session is stopping")
-	if sessions[id].bridge_connected:
+	var quit_sent: bool = sessions[id].bridge_connected
+	if quit_sent:
 		request(id, "quit", {}, grace_seconds + 1.0)
 	sessions[id].state = "stopping"
 	sessions[id].termination_reason = "requested_stop"
-	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false}
+	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false, "quit_sent": quit_sent}
 	return task
 
 func _poll_stops() -> void:
@@ -287,6 +288,9 @@ func _poll_stops() -> void:
 				stop.task.resolve({"ok": false, "error": "Could not terminate owned session " + id})
 				_stops.erase(id)
 		if _stops.has(id):
+			if not stop.forced and not stop.quit_sent and sessions[id].bridge_connected:
+				request(id, "quit", {}, maxf(1, (stop.deadline - Time.get_ticks_msec()) / 1000.0))
+				stop.quit_sent = true
 			stop.task.poll()
 			# HTTP cancellation affects only delivery, not the owned stop action.
 			# Keep the grace/kill state machine alive independently of the task.

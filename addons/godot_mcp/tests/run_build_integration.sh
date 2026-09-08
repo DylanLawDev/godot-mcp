@@ -21,6 +21,7 @@ SCENE
 expected=completed
 case "${1:-clean}" in
   clean) printf 'extends Node\nfunc _ready():\n\tpush_warning("fixture warning remains nonfatal")\n' > "$fixture_dir/fixture.gd" ;;
+  stderr) printf 'extends Node\nfunc _ready():\n\tprinterr("fixture stderr failure")\n' > "$fixture_dir/fixture.gd"; expected=failed ;;
   runtime_error) printf 'extends Node\nfunc _ready():\n\tpush_error("fixture runtime failure")\n' > "$fixture_dir/fixture.gd"; expected=failed ;;
   parse_error) printf 'extends Node\nfunc broken(:\n' > "$fixture_dir/fixture.gd"; expected=failed ;;
   missing) printf 'extends Node\nconst Missing = preload("res://missing.gd")\n' > "$fixture_dir/fixture.gd"; expected=failed ;;

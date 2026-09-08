@@ -5,6 +5,7 @@ const Wire = preload("res://addons/godot_mcp/runtime/bridge_wire.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 var current_request_id := ""
 var last_delta_msec := 0.0
+var _last_process_usec := 0
 var _commands
 var scene_ready := false
 var session_id := ""
@@ -34,7 +35,9 @@ func configure(args: Dictionary, capture) -> void:
 	_deadline = Time.get_ticks_msec() + 15000
 
 func _process(_delta: float) -> void:
-	last_delta_msec = _delta * 1000.0
+	var now := Time.get_ticks_usec()
+	last_delta_msec = (now - _last_process_usec) / 1000.0 if _last_process_usec > 0 else 0.0
+	_last_process_usec = now
 	_peer.poll()
 	if _quitting:
 		if _peer.pending_bytes() == 0 or Time.get_ticks_msec() >= _quit_deadline:

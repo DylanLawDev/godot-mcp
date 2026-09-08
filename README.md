@@ -396,3 +396,6 @@ are verified nonempty before success. Signing/export prerequisites remain the
 host's responsibility. Saved export credentials are copied into the temporary
 cache when present, redacted from retained build logs, and removed with the copy.
 Exports are never executed or published, and the runtime bridge is not activated.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

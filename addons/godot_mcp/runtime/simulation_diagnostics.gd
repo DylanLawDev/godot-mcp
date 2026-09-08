@@ -122,7 +122,7 @@ func advance(args: Dictionary):
 		return task
 	var controlled: Variant = adapter.call("mcp_simulation_set_controlled", true)
 	if not controlled is Dictionary or not controlled.get("ok") is bool or not controlled.ok:
-		task.resolve({"ok": false, "error": "Adapter could not enter controlled simulation mode"})
+		task.resolve({"ok": false, "error": adapter_error("Adapter could not enter controlled simulation mode", controlled)})
 		return task
 	_controlled_adapter = adapter
 	initial = read_adapter(adapter, {"sections": []})
@@ -154,9 +154,7 @@ func _advance_loop(task, adapter: Node, count: int, progress: Dictionary) -> voi
 			if actual.ok:
 				progress.tick_after = actual.value.tick
 				progress.advanced_ticks = progress.tick_after - progress.tick_before
-			var message := "Adapter tick failed or did not increment by exactly one"
-			if step is Dictionary and step.get("error") is String:
-				message += ": " + step.error.left(4096)
+			var message := adapter_error("Adapter tick failed or did not increment by exactly one", step)
 			_advance_failure(task, progress, message)
 			return
 		progress.tick_after = step.tick
@@ -189,3 +187,8 @@ static func valid_tick_result(step: Variant, expected: int) -> bool:
 
 static func safe_advance_range(tick: int, count: int) -> bool:
 	return tick >= 0 and count > 0 and count <= 10000 and tick <= 9007199254740991 - count
+
+static func adapter_error(prefix: String, response: Variant) -> String:
+	if response is Dictionary and response.get("error") is String:
+		return prefix + ": " + response.error.left(4096)
+	return prefix

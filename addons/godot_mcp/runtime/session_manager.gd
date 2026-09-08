@@ -111,8 +111,11 @@ func poll() -> void:
 			if read[0] != OK:
 				_drop(item)
 				continue
+			_note_activity(item, read[1].size())
 			for message in item.wire.feed(read[1]):
 				_receive(item, message)
+				if item.get("_dropped", false):
+					break
 			if item.wire.error != "":
 				_drop(item)
 	for rid in _pending.keys():
@@ -156,6 +159,8 @@ func poll() -> void:
 	_poll_stops()
 
 func _receive(item: Dictionary, message: Dictionary) -> void:
+	if item.get("_dropped", false):
+		return
 	var id: String = item.id
 	if id == "":
 		id = str(message.get("session_id", ""))
@@ -211,6 +216,9 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 			_drop(item)
 
 func _drop(item: Dictionary) -> void:
+	if item.get("_dropped", false):
+		return
+	item["_dropped"] = true
 	item.peer.disconnect_from_host()
 	_peers.erase(item)
 	var id: String = item.id
@@ -323,3 +331,10 @@ func errors(id: String, after: int, limit: int) -> Dictionary:
 func _queue_quit(id: String, timeout_seconds: float) -> bool:
 	var task = request(id, "quit", {}, timeout_seconds)
 	return not task.done or task.value.get("ok", false) == true
+
+func _note_activity(item: Dictionary, bytes: int) -> void:
+	var id: String = item.get("id", "")
+	if bytes > 0 and id != "" and sessions.has(id):
+		sessions[id]._heartbeat = Time.get_ticks_msec()
+		if sessions[id].state in ["running", "stopping"]:
+			sessions[id].bridge_connected = true

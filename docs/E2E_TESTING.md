@@ -365,3 +365,7 @@ must write below their own run directories, leaving original JSON unchanged.
 `tests/integration_scenario.gd` now polls `get_scenario_result` and verifies a
 stable completed verdict. Failure tests cover missing/malformed files, conflicting
 exit codes, timeout, and capture paths escaping the managed job directory.
+
+Launch `examples/scenes/simulation_demo.tscn` and query `get_simulation_snapshot`.
+Check stable linked settler/job/resource IDs and entity/section filters. A scene
+without the adapter must return a clear unsupported-instrumentation error.

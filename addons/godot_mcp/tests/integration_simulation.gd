@@ -76,7 +76,7 @@ func _failure_case(tools) -> void:
 		failures.append("injected tick failure unexpectedly succeeded")
 	else:
 		var detail: Variant = JSON.parse_string(advance.value.error)
-		if not detail is Dictionary or detail.get("advanced_ticks") != 2 or detail.get("tick_after") != 2:
+		if not detail is Dictionary or detail.get("advanced_ticks") != 2 or detail.get("tick_after") != 2 or not str(detail.get("message", "")).contains("Injected fixture tick failure"):
 			failures.append("partial tick count was not preserved")
 	var stop = tools.stop_project({"session_id": id})
 	while not stop.done:

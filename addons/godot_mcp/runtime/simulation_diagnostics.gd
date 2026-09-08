@@ -154,7 +154,10 @@ func _advance_loop(task, adapter: Node, count: int, progress: Dictionary) -> voi
 			if actual.ok:
 				progress.tick_after = actual.value.tick
 				progress.advanced_ticks = progress.tick_after - progress.tick_before
-			_advance_failure(task, progress, "Adapter tick failed or did not increment by exactly one")
+			var message := "Adapter tick failed or did not increment by exactly one"
+			if step is Dictionary and step.get("error") is String:
+				message += ": " + step.error.left(4096)
+			_advance_failure(task, progress, message)
 			return
 		progress.tick_after = step.tick
 		progress.advanced_ticks += 1

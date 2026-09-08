@@ -2,7 +2,7 @@ extends RefCounted
 const Synth = preload("res://addons/godot_mcp/runtime/input_synth.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 var bridge: Node
-var _busy := false
+var _active_task
 var _held: Dictionary = {}
 
 func _init(owner: Node) -> void:
@@ -59,14 +59,14 @@ func send(args: Dictionary):
 	if not checked.ok:
 		task.resolve(checked)
 		return task
-	if _busy:
+	if _active_task != null and not _active_task.done:
 		task.resolve({"ok": false, "error": "Another input sequence is running"})
 		return task
 	if checked.frames > 0 and bridge.get_tree().paused:
 		task.resolve({"ok": false, "error": "Frame-delayed input is unavailable while paused"})
 		return task
 	task.deadline_msec = Time.get_ticks_msec() + int(timeout_for_frames(checked.frames, 1.0) * 1000)
-	_busy = true
+	_active_task = task
 	task.on_cancel = Callable(self, "release_all")
 	_run(task, events.duplicate(true), checked.frames > 0)
 	return task
@@ -77,35 +77,29 @@ func _run(task, events: Array, align_physics: bool) -> void:
 	if align_physics:
 		await bridge.get_tree().physics_frame
 		if task.done:
-			_busy = false
 			return
 	var applied := 0
 	for item in events:
 		for _i in int(item.get("wait_frames", 0)):
 			await bridge.get_tree().physics_frame
 			if task.done:
-				_busy = false
 				return
 		if task.done:
-			_busy = false
 			return
 		var result := _dispatch(item)
 		if not result.ok:
 			release_all()
 			task.resolve({"ok": false, "error": str(result.error) + " (applied_count=%d)" % applied})
-			_busy = false
 			return
 		applied += 1
 		if item.has("hold_frames"):
 			for _i in int(item.hold_frames):
 				await bridge.get_tree().physics_frame
 				if task.done:
-					_busy = false
 					return
 			var release: Dictionary = item.duplicate(true)
 			release.pressed = false
 			_dispatch(release)
-	_busy = false
 	task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "applied_count": applied, "completed_frame": Engine.get_physics_frames()}})
 
 func _dispatch(item: Dictionary) -> Dictionary:
@@ -116,7 +110,13 @@ func _dispatch(item: Dictionary) -> Dictionary:
 	Input.parse_input_event(built.event)
 	Input.flush_buffered_events()
 	if item.get("kind") != "mouse_motion":
-		var key := str(item.kind) + ":" + str(item.get("key", item.get("button", item.get("action", ""))))
+		var key := ""
+		if built.event is InputEventKey:
+			key = "key:" + str(built.event.keycode)
+		elif built.event is InputEventMouseButton:
+			key = "mouse:" + str(built.event.button_index)
+		elif built.event is InputEventAction:
+			key = "action:" + str(built.event.action)
 		if item.get("pressed", true):
 			_held[key] = item.duplicate(true)
 		else:

@@ -270,7 +270,7 @@ func stop_session(id: String, grace_seconds: float):
 		quit_sent = _queue_quit(id, grace_seconds + 1.0)
 	sessions[id].state = "stopping"
 	sessions[id].termination_reason = "requested_stop"
-	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false, "quit_sent": quit_sent}
+	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false, "kill_checked": false, "quit_sent": quit_sent}
 	return task
 
 func _poll_stops() -> void:
@@ -279,13 +279,15 @@ func _poll_stops() -> void:
 		if not jobs.active(id):
 			stop.task.resolve({"ok": true, "value": {"session_id": id, "state": sessions[id].state, "already_stopped": false, "forced": stop.forced, "exit_code": sessions[id].exit_code}})
 			_stops.erase(id)
-		elif not stop.forced and Time.get_ticks_msec() >= stop.deadline:
-			stop.forced = true
+		elif not stop.kill_checked and Time.get_ticks_msec() >= stop.deadline:
+			stop.kill_checked = true
 			if not jobs.terminate(id, "forced_stop"):
 				stop.task.resolve({"ok": false, "error": "Could not terminate owned session " + id})
 				_stops.erase(id)
+			else:
+				stop.forced = jobs.records[id].get("kill_sent", false)
 		if _stops.has(id):
-			if not stop.forced and not stop.quit_sent and sessions[id].bridge_connected:
+			if not stop.kill_checked and not stop.quit_sent and sessions[id].bridge_connected:
 				stop.quit_sent = _queue_quit(id, maxf(1, (stop.deadline - Time.get_ticks_msec()) / 1000.0))
 			stop.task.poll()
 			# HTTP cancellation affects only delivery, not the owned stop action.

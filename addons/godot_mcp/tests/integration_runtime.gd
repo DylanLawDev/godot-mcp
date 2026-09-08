@@ -68,6 +68,12 @@ func _main() -> void:
 			await process_frame
 		if not timed.value.ok:
 			failures.append(timed.value)
+		var properties = tools.get_runtime_properties({"session_id": id, "path": ".", "properties": ["input_count"]})
+		while not properties.done:
+			manager.poll()
+			await process_frame
+		if not properties.value.ok or properties.value.value.properties.input_count != "2":
+			failures.append("runtime property did not reflect injected input: " + str(properties.value))
 		if rendered:
 			var first_resize = tools.resize_game_window({"session_id": id, "width": 700, "height": 500})
 			var overlapping_resize = tools.resize_game_window({"session_id": id, "width": 600, "height": 400})

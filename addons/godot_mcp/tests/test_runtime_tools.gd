@@ -75,3 +75,8 @@ func test_runtime_tree_limits_and_path_types() -> void:
 	var tools := Tools.new(FakeManager.new())
 	for args in [{}, {"session_id": "a", "path": 2}, {"session_id": "a", "max_depth": -1}, {"session_id": "a", "max_nodes": 0}, {"session_id": "a", "max_nodes": 10001}]:
 		assert_false(tools.get_runtime_tree(args).ok)
+
+func test_runtime_property_filter_validation() -> void:
+	var tools := Tools.new(FakeManager.new())
+	for args in [{}, {"session_id": "a"}, {"session_id": "a", "path": 4}, {"session_id": "a", "path": ".", "properties": "name"}, {"session_id": "a", "path": ".", "properties": [1]}]:
+		assert_false(tools.get_runtime_properties(args).ok)

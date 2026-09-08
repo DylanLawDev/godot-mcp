@@ -13,6 +13,7 @@ func _init(owner: Node) -> void:
 	input_sequence = InputSequence.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["get_runtime_properties"] = Callable(self, "get_runtime_properties")
 	bridge.handlers["get_runtime_tree"] = Callable(self, "get_runtime_tree")
 	bridge.handlers["resize_game_window"] = Callable(self, "resize_game_window")
 	bridge.handlers["send_input"] = Callable(input_sequence, "send")
@@ -103,3 +104,20 @@ func get_runtime_tree(args: Dictionary) -> Dictionary:
 	value["session_id"] = bridge.session_id
 	value["frame"] = Engine.get_process_frames()
 	return {"ok": true, "value": value}
+
+func get_runtime_properties(args: Dictionary) -> Dictionary:
+	var root: Node = bridge.get_tree().current_scene
+	if root == null:
+		return {"ok": false, "error": "The running game has no current scene"}
+	var node := NodeOps.resolve(root, args.get("path", "."))
+	if node == null:
+		return {"ok": false, "error": "Runtime node not found or outside current scene"}
+	var properties: Dictionary
+	if args.has("properties"):
+		var selected := NodeOps.encode_selected_props(node, args.properties)
+		if not selected.ok:
+			return selected
+		properties = selected.value
+	else:
+		properties = NodeOps.encode_props(node)
+	return {"ok": true, "value": {"session_id": bridge.session_id, "frame": Engine.get_process_frames(), "path": str(root.get_path_to(node)), "properties": properties}}

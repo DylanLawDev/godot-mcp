@@ -348,3 +348,7 @@ window dimensions before capturing. Its headless variant rejects resizing.
 
 Runtime-tree integration verifies a `RuntimeOnly` node spawned in `_ready`
 appears through `get_runtime_tree` even though it does not exist in the scene file.
+
+After injecting two A presses, integration reads the live fixture's `input_count`
+property and verifies it is `"2"`; its scene starts at zero. This closes the
+input-to-observed-state loop without looking at the edited scene.

@@ -127,3 +127,18 @@ static func _bounded_tree(node: Node, root: Node, depth: int, budget: Dictionary
 			break
 		out.children.append(_bounded_tree(child, root, depth - 1, budget))
 	return out
+
+static func encode_selected_props(node: Node, names: Array) -> Dictionary:
+	var known := {}
+	var skip := PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP
+	for property in node.get_property_list():
+		if not (int(property.usage) & skip):
+			known[property.name] = true
+	# Validate all names before evaluating getters.
+	for name in names:
+		if not name is String or not known.has(name):
+			return {"ok": false, "error": "Unknown runtime property: " + str(name)}
+	var values := {}
+	for name in names:
+		values[name] = var_to_str(node.get(name))
+	return {"ok": true, "value": values}

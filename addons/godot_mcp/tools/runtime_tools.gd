@@ -128,7 +128,28 @@ func get_runtime_tree(args: Dictionary) -> Variant:
 		return failure("max_depth must be 0–64 and max_nodes must be 1–10000")
 	return runtime.request(id, "get_runtime_tree", {"path": args.get("path", "."), "max_depth": args.get("max_depth", 8), "max_nodes": args.get("max_nodes", 1000)})
 
+func get_runtime_properties(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not args.get("path") is String:
+		return failure("path must be a string relative to the current scene")
+	var command := {"path": args.path}
+	if args.has("properties"):
+		if not args.properties is Array or args.properties.size() > 256:
+			return failure("properties must be an array of at most 256 names")
+		for name in args.properties:
+			if not name is String:
+				return failure("Each property name must be a string")
+		command["properties"] = args.properties
+	return runtime.request(id, "get_runtime_properties", command)
+
 func register_tools(reg) -> void:
+	reg.register("get_runtime_properties", "Read live game node properties encoded as Godot var_to_str strings. An optional name list limits getters/payload size; path is current-scene relative.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "path": {"type": "string"}, "properties": {"type": "array", "maxItems": 256, "items": {"type": "string"}}}, "required": ["session_id", "path"]}, Callable(self, "get_runtime_properties"))
 	reg.register("get_runtime_tree", "Inspect the live current-scene hierarchy, including spawned nodes. Paths are relative to the running scene, not the editor. Results report truncation.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "path": {"type": "string", "default": "."}, "max_depth": {"type": "integer", "minimum": 0, "maximum": 64, "default": 8}, "max_nodes": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}}, "required": ["session_id"]}, Callable(self, "get_runtime_tree"))
 	reg.register("resize_game_window", "Resize a standalone rendered game window and report actual window/viewport/content-scale dimensions. Does not change fullscreen mode or project stretch settings.",

@@ -307,3 +307,7 @@ A batch is validated before dispatch and concurrent sequences are rejected.
 Explicit presses remain held until release; stop/disconnect cancels injected holds.
 Timed input is unavailable while paused. Applied event count excludes synthesized
 hold releases. Coordinates are original viewport pixels, before capture downscaling.
+
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

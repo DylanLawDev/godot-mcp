@@ -37,3 +37,8 @@ func test_safe_tick_boundary() -> void:
 	assert_false(Diagnostics.safe_advance_range(9007199254740990, 2))
 	assert_false(Diagnostics.safe_advance_range(9007199254740991, 1))
 	assert_false(Diagnostics.valid_tick_result({"ok": true, "tick": 9007199254740992}, 9007199254740992))
+
+func test_adapter_rejection_details_are_preserved_and_bounded() -> void:
+	assert_eq(Diagnostics.adapter_error("Control rejected", {"ok": false, "error": "active transaction"}), "Control rejected: active transaction")
+	assert_eq(Diagnostics.adapter_error("Malformed", {"error": 3}), "Malformed")
+	assert_eq(Diagnostics.adapter_error("Error", {"error": "x".repeat(5000)}).length(), 4103)

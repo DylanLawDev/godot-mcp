@@ -262,3 +262,7 @@ for live-server testing. The headless unit suite runs with:
 ## License
 
 See [`LICENSE`](LICENSE).
+
+Runtime infrastructure is documented in [RUNTIME_BRIDGE.md](docs/RUNTIME_BRIDGE.md).
+The foundation provides isolated managed sessions and nonblocking communication;
+public runtime tools are added by the follow-up implementation issues.

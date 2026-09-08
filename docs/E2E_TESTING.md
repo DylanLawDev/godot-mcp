@@ -313,3 +313,11 @@ curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"capture_texture","arguments":{"path":"View","out_path":"examples/scratch/view.png"}}}'
 
 ```
+
+## Managed runtime foundation
+
+Run `GODOT=/path/to/godot4 ./addons/godot_mcp/tests/run_runtime_integration.sh`.
+It creates a temporary project, checks its autoload and paused-scene bridge,
+rejects a duplicate launch, and verifies that quitting retains the child exit
+status. This test does not change the open project or require a rendered window.
+See [RUNTIME_BRIDGE.md](RUNTIME_BRIDGE.md) for the wire and deferred handler seams.

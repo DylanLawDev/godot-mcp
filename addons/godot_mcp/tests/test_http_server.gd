@@ -62,3 +62,42 @@ func test_get_returns_405() -> void:
 	var resp := _round_trip(port, req)
 	assert_has(resp, "HTTP/1.1 405 Method Not Allowed")
 	_server.stop()
+
+var _pending_response
+func _dispatch_pending(body: String) -> Variant:
+	if body == "later":
+		_pending_response = preload("res://addons/godot_mcp/runtime/deferred_result.gd").new()
+		return _pending_response
+	return "{}"
+
+func test_pending_request_does_not_block_other_client() -> void:
+	_server = HttpServer.new(Callable(self, "_dispatch_pending"))
+	assert_eq(_server.start(0), OK)
+	var client := StreamPeerTCP.new()
+	client.connect_to_host("127.0.0.1", _server.get_port())
+	var sent := false
+	for _i in 100:
+		_server.poll()
+		client.poll()
+		if not sent and client.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			client.put_data("POST /mcp HTTP/1.1\r\nContent-Length: 5\r\n\r\nlater".to_utf8_buffer())
+			sent = true
+		if _pending_response != null:
+			break
+		OS.delay_msec(1)
+	assert_true(_pending_response != null)
+	var response := _round_trip(_server.get_port(), "POST /mcp HTTP/1.1\r\nContent-Length: 3\r\n\r\nnow")
+	assert_has(response, "200 OK")
+	assert_false(_pending_response.done)
+	_pending_response.resolve('{"completed":true}')
+	var output := ""
+	for _i in 100:
+		_server.poll()
+		client.poll()
+		if client.get_available_bytes() > 0:
+			output += client.get_utf8_string(client.get_available_bytes())
+		if output.contains('"completed"'):
+			break
+		OS.delay_msec(1)
+	assert_has(output, '"completed":true')
+	_server.stop()

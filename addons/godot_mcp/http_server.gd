@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
 
+const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
 const Http = preload("res://addons/godot_mcp/http_message.gd")
 
 var _tcp := TCPServer.new()
@@ -23,6 +24,8 @@ func is_listening() -> bool:
 func stop() -> void:
 	for id in _clients:
 		var c = _clients[id]
+		if c.has("pending"):
+			c.pending.cancel("HTTP server stopped")
 		if c["peer"] != null:
 			c["peer"].disconnect_from_host()
 	_clients.clear()
@@ -48,7 +51,27 @@ func _service_client(id: int) -> bool:
 	var peer: StreamPeerTCP = c["peer"]
 	peer.poll()
 	if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+		if c.has("pending"):
+			c.pending.cancel("HTTP client disconnected")
 		return true
+	if c.has("out"):
+		var chunk: PackedByteArray = c.out.slice(c.offset, mini(c.offset + 65536, c.out.size()))
+		var sent := peer.put_partial_data(chunk)
+		if sent[0] != OK:
+			peer.disconnect_from_host()
+			return true
+		c.offset += sent[1]
+		if c.offset >= c.out.size():
+			peer.disconnect_from_host()
+			return true
+		return false
+	if c.has("pending"):
+		c.pending.poll()
+		if c.pending.done:
+			_send(c, Http.build_response(200, str(c.pending.value)))
+			c.erase("pending")
+			return false
+		return false
 	var avail := peer.get_available_bytes()
 	if avail > 0:
 		var chunk: Array = peer.get_data(avail)
@@ -59,24 +82,27 @@ func _service_client(id: int) -> bool:
 		return false  # headers not complete yet
 	var parsed := Http.parse_request(raw)
 	if not parsed["ok"]:
-		_send(peer, Http.build_response(400, "Bad Request", "text/plain"))
-		return true
+		_send(c, Http.build_response(400, "Bad Request", "text/plain"))
+		return false
 	var need := Http.content_length(parsed["headers"])
 	if parsed["body"].to_utf8_buffer().size() < need:
 		return false  # body still arriving
-	_respond(peer, parsed)
-	return true
+	return _respond(peer, parsed, c)
 
-func _respond(peer: StreamPeerTCP, parsed: Dictionary) -> void:
+func _respond(peer: StreamPeerTCP, parsed: Dictionary, client: Dictionary) -> bool:
 	if parsed["method"] != "POST" or not str(parsed["path"]).begins_with("/mcp"):
-		_send(peer, Http.build_response(405, "Method Not Allowed", "text/plain"))
-		return
-	var out: String = _dispatch.call(parsed["body"])
+		_send(client, Http.build_response(405, "Method Not Allowed", "text/plain"))
+		return false
+	var out: Variant = _dispatch.call(parsed["body"])
+	if out is Deferred:
+		client["pending"] = out
+		return false
 	if out == "":
-		_send(peer, Http.build_response(202, ""))
+		_send(client, Http.build_response(202, ""))
 	else:
-		_send(peer, Http.build_response(200, out))
+		_send(client, Http.build_response(200, out))
+	return false
 
-func _send(peer: StreamPeerTCP, response_text: String) -> void:
-	peer.put_data(response_text.to_utf8_buffer())
-	peer.disconnect_from_host()
+func _send(client: Dictionary, response_text: String) -> void:
+	client["out"] = response_text.to_utf8_buffer()
+	client["offset"] = 0

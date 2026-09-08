@@ -1,6 +1,7 @@
 extends "res://addons/godot_mcp/tests/test_case.gd"
 
 const McpHandler = preload("res://addons/godot_mcp/mcp_handler.gd")
+const ToolRegistry = preload("res://addons/godot_mcp/tool_registry.gd")
 
 func _parse(text: String) -> Dictionary:
 	return JSON.parse_string(text)
@@ -210,6 +211,28 @@ func test_modern_cacheable_results_are_private_and_immediately_stale() -> void:
 		assert_true(result["ttlMs"] >= 0, method)
 		assert_has(h.handle_message(_modern_request(61, method, params)), '"ttlMs":0', method)
 		assert_eq(result["cacheScope"], "private", method)
+
+func _deferred_tool(_args: Dictionary):
+	_pending = ToolRegistry.Deferred.new()
+	return _pending
+
+var _pending
+
+func test_modern_deferred_tool_result_is_decorated_on_completion() -> void:
+	var reg = ToolRegistry.new()
+	reg.register("later", "deferred", {"type": "object"}, Callable(self, "_deferred_tool"))
+	var h = McpHandler.new(reg, null, true)
+	var out = h.handle_request(_modern_request(64, "tools/call", {"name": "later", "arguments": {}}))
+	assert_true(out is ToolRegistry.Deferred)
+	_pending.resolve({"ok": true, "value": "done"})
+	var response: Dictionary = out.value
+	assert_eq(response["status"], 200)
+	var d := _parse(response["body"])
+	assert_eq(d["id"], 64)
+	assert_false(d["result"]["isError"])
+	assert_eq(d["result"]["resultType"], "complete")
+	assert_eq(d["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "godot-mcp")
+	assert_false(d["result"].has("ttlMs"))
 
 func test_modern_jsonrpc_errors_are_not_decorated() -> void:
 	var h = McpHandler.new(null, null, true)

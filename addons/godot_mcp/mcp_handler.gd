@@ -151,9 +151,17 @@ func _handle(req: Dictionary, protocol := {"modern": false}):
 		if method in ["initialize", "notifications/initialized", "ping"]:
 			return JsonRpc.error(id, -32601, "Method not found: " + method)
 	var response = _dispatch_method(req)
-	if protocol["modern"] and response != null and response.has("result"):
-		response["result"] = _decorate_modern_result(response["result"], method)
-	return response
+	if not protocol["modern"] or response == null:
+		return response
+	if response is ToolRegistry.Deferred:
+		# Runtime tools resolve later; decorate the envelope when it completes.
+		return response.transform(func(envelope): return _decorate_modern_envelope(envelope, method))
+	return _decorate_modern_envelope(response, method)
+
+func _decorate_modern_envelope(envelope: Dictionary, method: String) -> Dictionary:
+	if envelope.has("result"):
+		envelope["result"] = _decorate_modern_result(envelope["result"], method)
+	return envelope
 
 func _decorate_modern_result(value, method: String) -> Dictionary:
 	var result: Dictionary = value.duplicate(true) if typeof(value) == TYPE_DICTIONARY else {"value": value}

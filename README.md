@@ -313,3 +313,6 @@ size (64–8192 pixels per axis) and returns actual window_size, viewport_size a
 content_scale_size after a rendered frame. For example, `{"session_id":"<id>",
 "width":800,"height":600}`. OS constraints may clamp the request. Headless,
 fullscreen and embedded modes are rejected; project stretch settings are preserved.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

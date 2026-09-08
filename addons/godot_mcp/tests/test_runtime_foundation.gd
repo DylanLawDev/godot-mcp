@@ -227,3 +227,19 @@ func test_cancelled_stop_response_keeps_forced_cleanup() -> void:
 	assert_false(jobs.active(id))
 	assert_eq(manager.active_id, "")
 	manager.shutdown()
+
+func test_stop_during_startup_uses_bridge_when_ready() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var launched := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = launched.value.session_id
+	manager.stop_session(id, 10)
+	assert_false(manager._stops[id].quit_sent)
+	var peer := FakePeer.new()
+	manager.sessions[id]._peer = peer
+	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "ready"})
+	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "heartbeat"})
+	manager._poll_stops()
+	assert_true(manager._stops[id].quit_sent)
+	assert_eq(manager.sessions[id].state, "stopping")
+	assert_false(manager._stops[id].forced)
+	manager.shutdown()

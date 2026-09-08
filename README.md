@@ -319,3 +319,6 @@ live scene, including runtime-spawned children. It returns tree, frame and an
 explicit truncated flag. A node includes name/type/path/script/children; paths
 are relative to the current game scene. Example: `{"session_id":"<id>",
 "max_depth":2}`. This does not use the edited scene or expose bridge internals.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

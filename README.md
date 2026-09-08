@@ -356,3 +356,6 @@ tick. Example: `{"session_id":"<id>","sections":["jobs","inventories"],
 [simulation adapter](docs/SIMULATION_ADAPTER.md); unavailable instrumentation is
 reported clearly. The included simulation_demo scene is a deterministic fixture,
 not an integration with an external settlement game.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

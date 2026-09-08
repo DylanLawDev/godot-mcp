@@ -236,6 +236,7 @@ func test_stop_during_startup_uses_bridge_when_ready() -> void:
 	assert_false(manager._stops[id].quit_sent)
 	var peer := FakePeer.new()
 	manager.sessions[id]._peer = peer
+	manager._peers.append({"id": id, "peer": peer})
 	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "ready"})
 	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "heartbeat"})
 	manager._poll_stops()

@@ -145,12 +145,8 @@ func _launch_stage(stage: String, args: PackedStringArray) -> void:
 		_finish(false, result.error)
 
 func _retain_output(job: Dictionary, process: Dictionary) -> void:
-	for entry in process.get("output", []):
-		var diagnostic: Dictionary = entry.duplicate(true)
+	for diagnostic in sanitized_output(process.get("output", []), job._options.get("redactions", [])):
 		diagnostic["stage"] = job.stage
-		diagnostic["text"] = clean_log(str(diagnostic.get("text", "")))
-		for secret in job._options.get("redactions", []):
-			diagnostic.text = str(diagnostic.get("text", "")).replace(secret, "[REDACTED]")
 		job.diagnostics.append(diagnostic)
 	while job.diagnostics.size() > 1000:
 		job.diagnostics.pop_front()
@@ -241,3 +237,24 @@ static func clean_log(text: String) -> String:
 		if code >= 32 or code in [9, 10, 13]:
 			out += character
 	return out
+
+static func sanitized_output(output: Array, secrets: Array) -> Array:
+	# Pipe reads are arbitrary chunks. Reassemble each stream before redacting,
+	# including when stdout/stderr reads were interleaved by the process poller.
+	var streams := {}
+	for entry in output:
+		var source: String = str(entry.get("source", "stdout"))
+		if not streams.has(source):
+			streams[source] = {"source": source, "text": "", "timestamp_msec": entry.get("timestamp_msec"), "sequence": entry.get("sequence")}
+		streams[source].text += str(entry.get("text", ""))
+		streams[source]["last_timestamp_msec"] = entry.get("timestamp_msec")
+	var result := []
+	for stream in streams.values():
+		var text := clean_log(stream.text)
+		for secret in secrets:
+			if secret is String and secret != "":
+				text = text.replace(secret, "[REDACTED]")
+		stream["truncated"] = text.length() > 512 * 1024
+		stream.text = text.left(512 * 1024)
+		result.append(stream)
+	return result

@@ -46,3 +46,11 @@ func test_tool_limits() -> void:
 func test_build_logs_do_not_emit_raw_ansi_controls() -> void:
 	var pipeline = preload("res://addons/godot_mcp/runtime/build_pipeline.gd")
 	assert_eq(pipeline.clean_log(String.chr(27) + "[90mtext" + String.chr(27) + "[0m\n"), "text\n")
+
+func test_secret_redaction_spans_interleaved_pipe_chunks() -> void:
+	var pipeline = preload("res://addons/godot_mcp/runtime/build_pipeline.gd")
+	var output := [{"source": "stderr", "text": "prefix signing-se"}, {"source": "stdout", "text": "ordinary output"}, {"source": "stderr", "text": "cret suffix"}]
+	var sanitized: Array = pipeline.sanitized_output(output, ["signing-secret"])
+	assert_eq(sanitized[0].text, "prefix [REDACTED] suffix")
+	assert_eq(sanitized[1].text, "ordinary output")
+	assert_false(JSON.stringify(sanitized).contains("signing-se"))

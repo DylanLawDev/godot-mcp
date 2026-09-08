@@ -65,13 +65,20 @@ func send(args: Dictionary):
 	if checked.frames > 0 and bridge.get_tree().paused:
 		task.resolve({"ok": false, "error": "Frame-delayed input is unavailable while paused"})
 		return task
-	task.deadline_msec = Time.get_ticks_msec() + int(timeout_for_frames(checked.frames, Engine.physics_ticks_per_second) * 1000)
+	task.deadline_msec = Time.get_ticks_msec() + int(timeout_for_frames(checked.frames, 1.0) * 1000)
 	_busy = true
 	task.on_cancel = Callable(self, "release_all")
-	_run(task, events.duplicate(true))
+	_run(task, events.duplicate(true), checked.frames > 0)
 	return task
 
-func _run(task, events: Array) -> void:
+func _run(task, events: Array, align_physics: bool) -> void:
+	# Signals precede physics callbacks. Align the initial press to that boundary,
+	# then N subsequent signals mean N complete game physics steps have elapsed.
+	if align_physics:
+		await bridge.get_tree().physics_frame
+		if task.done:
+			_busy = false
+			return
 	var applied := 0
 	for item in events:
 		for _i in int(item.get("wait_frames", 0)):

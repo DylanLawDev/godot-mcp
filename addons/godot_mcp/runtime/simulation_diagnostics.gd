@@ -127,13 +127,13 @@ func advance(args: Dictionary):
 	_controlled_adapter = adapter
 	initial = read_adapter(adapter, {"sections": []})
 	if not initial.ok:
-		task.resolve(initial)
+		_advance_failure(task, {"tick_before": null, "tick_after": null, "advanced_ticks": 0, "paused": true}, "Controlled snapshot failed: " + str(initial.error))
 		return task
+	var progress := {"tick_before": initial.value.tick, "tick_after": initial.value.tick, "advanced_ticks": 0, "paused": true}
 	if not safe_advance_range(int(initial.value.tick), int(count)):
-		task.resolve({"ok": false, "error": "Controlled tick exceeds the requested JSON-safe range"})
+		_advance_failure(task, progress, "Controlled tick exceeds the requested JSON-safe range")
 		return task
 	_advance_task = task
-	var progress := {"tick_before": initial.value.tick, "tick_after": initial.value.tick, "advanced_ticks": 0, "paused": true}
 	task.on_cancel = func(): _advance_failure(task, progress, "Advancement cancelled or timed out; completed ticks are not rolled back")
 	_advance_loop(task, adapter, int(count), progress)
 	return task

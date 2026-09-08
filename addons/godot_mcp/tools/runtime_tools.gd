@@ -99,7 +99,9 @@ func send_input(args: Dictionary) -> Variant:
 	if not events is Array or events.is_empty() or events.size() > 256:
 		return failure("events must contain 1–256 objects")
 	# Full validation runs in the game, whose InputMap is authoritative.
-	var tick_rate := float(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
+	# Use Godot's minimum tick rate: games may change the effective rate after
+	# startup or while this sequence runs. ProjectSettings is not authoritative.
+	var tick_rate := 1.0
 	var timeout := InputSequence.timeout_for_events(events, tick_rate) + 5.0
 	return runtime.request(id, "send_input", {"events": events}, timeout)
 

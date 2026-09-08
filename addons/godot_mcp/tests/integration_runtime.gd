@@ -34,6 +34,34 @@ func _main() -> void:
 			await process_frame
 		if unknown.value.ok:
 			failures.append("unknown command succeeded")
+		var injected = tools.send_input({"session_id": id, "events": [
+			{"kind": "key", "key": "A"}, {"kind": "key", "key": "A", "pressed": false},
+			{"kind": "mouse_button", "button": "left", "position": [220, 220]},
+			{"kind": "mouse_button", "button": "left", "position": [220, 220], "pressed": false},
+			{"kind": "mouse_button", "button": "left", "position": [20, 20]},
+			{"kind": "mouse_motion", "position": [80, 80], "relative": [60, 60]},
+			{"kind": "mouse_button", "button": "left", "position": [80, 80], "pressed": false}]})
+		while not injected.done:
+			manager.poll()
+			await process_frame
+		if not injected.value.ok:
+			failures.append(injected.value)
+		var delayed = tools.send_input({"session_id": id, "events": [{"kind": "key", "key": "A", "hold_frames": 2}]})
+		while not delayed.done:
+			manager.poll()
+			await process_frame
+		if delayed.value.ok:
+			failures.append("delayed input accepted while paused")
+		var resume = tools.send_input({"session_id": id, "events": [{"kind": "key", "key": "Space"}, {"kind": "key", "key": "Space", "pressed": false}]})
+		while not resume.done:
+			manager.poll()
+			await process_frame
+		var timed = tools.send_input({"session_id": id, "events": [{"kind": "key", "key": "A", "hold_frames": 3}]})
+		while not timed.done:
+			manager.poll()
+			await process_frame
+		if not timed.value.ok:
+			failures.append(timed.value)
 		for format in ["file", "base64"]:
 			var shot = tools.capture_game_frame({"session_id": id, "format": format, "downscale": 2})
 			while not shot.done:
@@ -73,6 +101,9 @@ func _main() -> void:
 		failures.append("autoload unavailable in bootstrap")
 	if not output.contains("PAUSED_READY"):
 		failures.append("paused fixture unavailable")
+	for marker in ["KEY_A_RECEIVED", "DRAG_MASK_OK", "BUTTON_PRESSED", "POLLED_HELD_A", "UNHANDLED_A_RECEIVED"]:
+		if not output.contains(marker):
+			failures.append("Missing runtime input marker: " + marker)
 	_finish()
 
 func _finish() -> void:

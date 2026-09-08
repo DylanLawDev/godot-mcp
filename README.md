@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **44 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **45 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -296,3 +296,18 @@ returns PNG data instead. For example, `{"session_id":"<id>","downscale":2}`
 returns half-resolution pixels. Headless runs fail clearly; this captures the
 game rather than the editor window. Map downscaled image positions back to the
 reported original viewport_size when sending input.
+
+`send_input({session_id, events:[...]})` injects ordered key, action, mouse_button
+and mouse_motion events using the existing scenario event format. Example drag:
+`[{"kind":"mouse_button","button":"left","position":[20,20]},
+{"kind":"mouse_motion","position":[100,100],"relative":[80,80]},
+{"kind":"mouse_button","button":"left","pressed":false,"position":[100,100]}]`.
+Use wait_frames before an event or hold_frames to auto-release a press afterward.
+A batch is validated before dispatch and concurrent sequences are rejected.
+Explicit presses remain held until release; stop/disconnect cancels injected holds.
+Timed input is unavailable while paused. Applied event count excludes synthesized
+hold releases. Coordinates are original viewport pixels, before capture downscaling.
+
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

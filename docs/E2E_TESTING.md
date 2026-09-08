@@ -380,3 +380,14 @@ The child is rendered and paused; verify its registered timing monitor, missing
 monitor reporting, monotonic samples, live tree inspection during a 30-second
 sample, and stop returning partial samples. Omit `--render` for a headless child.
 Run `test_performance_sampler.gd` for deterministic p95/mean and argument limits.
+
+### Project validation
+
+Run `addons/godot_mcp/tests/run_build_integration.sh` with each argument: `clean`,
+`runtime_error`, `parse_error`, `missing`, `early_exit`, `timeout` (honors `$GODOT`).
+Fixtures live in paths containing spaces. The tests verify stage failures, warning
+handling, stable polling, busy/unknown-job errors, untouched source configuration
+and removed snapshots. `test_build_tools.gd` checks cache exclusions, preservation
+of autoload/other-plugin settings and error retention after output-ring eviction.
+In a live editor, start validation then ping and inspect an interactive session
+while validation imports its separate copy.

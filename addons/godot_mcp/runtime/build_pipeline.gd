@@ -248,6 +248,6 @@ static func sanitized_output(output: Array, secrets: Array) -> Array:
 			if secret is String and secret != "":
 				text = text.replace(secret, "[REDACTED]")
 		stream["truncated"] = text.length() > 512 * 1024
-		stream.text = text.left(512 * 1024)
+		stream.text = text.right(512 * 1024)
 		result.append(stream)
 	return result

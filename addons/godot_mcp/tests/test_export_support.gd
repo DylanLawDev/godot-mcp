@@ -73,3 +73,11 @@ func test_selected_template_survives_output_directory_exclusion() -> void:
 		var cleanup := Snapshot.new(path, "", true)
 		while not cleanup.done:
 			cleanup.poll()
+
+func test_truncated_output_retains_terminal_failure() -> void:
+	var pipeline = preload("res://addons/godot_mcp/runtime/build_pipeline.gd")
+	var output := [{"source": "stderr", "text": "OLD_HEAD" + "x".repeat(600 * 1024) + "FINAL_FAILURE"}]
+	var result: Array = pipeline.sanitized_output(output, [])
+	assert_true(result[0].truncated)
+	assert_true(result[0].text.ends_with("FINAL_FAILURE"))
+	assert_eq(result[0].text.length(), 512 * 1024)

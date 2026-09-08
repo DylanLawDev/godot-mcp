@@ -147,7 +147,20 @@ func get_runtime_properties(args: Dictionary) -> Variant:
 		command["properties"] = args.properties
 	return runtime.request(id, "get_runtime_properties", command)
 
+func get_runtime_errors(args: Dictionary) -> Dictionary:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not integer(args.get("after_sequence", 0), 0, 9007199254740991) or not integer(args.get("limit", 100), 1, 1000):
+		return failure("after_sequence must be nonnegative; limit must be 1–1000")
+	return runtime.errors(id, int(args.get("after_sequence", 0)), int(args.get("limit", 100)))
+
 func register_tools(reg) -> void:
+	reg.register("get_runtime_errors", "Read retained session errors and startup stderr, with monotonic pagination and explicit truncation. Does not clear logs or query editor errors.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "after_sequence": {"type": "integer", "minimum": 0, "default": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}}, "required": ["session_id"]}, Callable(self, "get_runtime_errors"))
 	reg.register("get_runtime_properties", "Read live game node properties encoded as Godot var_to_str strings. An optional name list limits getters/payload size; path is current-scene relative.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "path": {"type": "string"}, "properties": {"type": "array", "maxItems": 256, "items": {"type": "string"}}}, "required": ["session_id", "path"]}, Callable(self, "get_runtime_properties"))
 	reg.register("get_runtime_tree", "Inspect the live current-scene hierarchy, including spawned nodes. Paths are relative to the running scene, not the editor. Results report truncation.",

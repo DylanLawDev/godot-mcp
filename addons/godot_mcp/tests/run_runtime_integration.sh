@@ -33,6 +33,8 @@ func _ready():
 	spawned.name = "RuntimeOnly"
 	add_child(spawned)
 	print("PAUSED_READY")
+	push_error("RUNTIME_FIXTURE_ERROR")
+	printerr("RUNTIME_FIXTURE_STDERR")
 func _physics_process(_delta):
 	if Input.is_key_pressed(KEY_A):
 		print("POLLED_HELD_A")

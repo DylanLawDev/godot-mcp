@@ -352,3 +352,7 @@ appears through `get_runtime_tree` even though it does not exist in the scene fi
 After injecting two A presses, integration reads the live fixture's `input_count`
 property and verifies it is `"2"`; its scene starts at zero. This closes the
 input-to-observed-state loop without looking at the edited scene.
+
+The runtime-error fixture emits a known `push_error` and stderr message. Verify
+`get_runtime_errors` includes them with source tags, file/function context where
+available, and still returns them after stopping the game. Pagination is read-only.

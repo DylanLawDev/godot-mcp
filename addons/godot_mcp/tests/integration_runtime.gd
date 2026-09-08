@@ -126,6 +126,16 @@ func _main() -> void:
 			failures.append("repeat stop was not idempotent")
 	status = tools.get_run_status({"session_id": id}).value
 	print("EXIT: ", JSON.stringify(status))
+	var errors := tools.get_runtime_errors({"session_id": id})
+	if not errors.ok or not JSON.stringify(errors).contains("RUNTIME_FIXTURE_ERROR") or not JSON.stringify(errors).contains("RUNTIME_FIXTURE_STDERR"):
+		failures.append("runtime errors were not retained after exit")
+	print("RUNTIME_ERRORS: ", JSON.stringify(errors))
+	var has_context := false
+	for entry in errors.get("value", {}).get("entries", []):
+		if entry.get("source") == "runtime_logger" and JSON.stringify(entry.get("backtraces", [])).contains("res://fixture.gd"):
+			has_context = true
+	if not has_context:
+		failures.append("structured runtime error lost file context")
 	var output := JSON.stringify(status.diagnostics)
 	if not output.contains("AUTOLOAD_OK"):
 		failures.append("autoload unavailable in bootstrap")

@@ -9,6 +9,7 @@ const ProjectTools = preload("res://addons/godot_mcp/tools/project_tools.gd")
 const SceneTools = preload("res://addons/godot_mcp/tools/scene_tools.gd")
 const EditorTools = preload("res://addons/godot_mcp/tools/editor_tools.gd")
 const InputTools = preload("res://addons/godot_mcp/tools/input_tools.gd")
+const RuntimeTools = preload("res://addons/godot_mcp/tools/runtime_tools.gd")
 const UidTools = preload("res://addons/godot_mcp/tools/uid_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
@@ -89,6 +90,9 @@ func _handle(req: Dictionary):
 
 func _build_default_registry(project = null, scene = null):
 	var reg = ToolRegistry.new()
+	var runtime_tools = RuntimeTools.new()
+	runtime_tools.register_tools(reg)
+	reg.set_meta("_runtime_tools", runtime_tools)
 	var files = FileTools.new()
 	var scripts = ScriptTools.new()
 	reg.register("read_file", "Read a UTF-8 text file from the project. Args: {path}.",

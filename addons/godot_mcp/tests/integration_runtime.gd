@@ -1,6 +1,7 @@
 extends SceneTree
 const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
 var manager
+const Tools = preload("res://addons/godot_mcp/tools/runtime_tools.gd")
 var failures := []
 
 func _initialize() -> void:
@@ -8,13 +9,14 @@ func _initialize() -> void:
 	_main.call_deferred()
 
 func _main() -> void:
-	var result: Dictionary = manager.launch("res://fixture.tscn", true, 5)
+	var tools := Tools.new(manager)
+	var result: Dictionary = tools.run_project({"scene": "res://fixture.tscn", "headless": true, "startup_timeout_seconds": 5})
 	if not result.ok:
 		failures.append(result)
 		_finish()
 		return
 	var id: String = result.value.session_id
-	if manager.launch("res://fixture.tscn", true).ok:
+	if tools.run_project({"scene": "res://fixture.tscn", "headless": true}).ok:
 		failures.append("duplicate launch accepted")
 	var deadline := Time.get_ticks_msec() + 6000
 	while manager.summary(id).state == "starting" and Time.get_ticks_msec() < deadline:

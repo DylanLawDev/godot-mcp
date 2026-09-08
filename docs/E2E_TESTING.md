@@ -321,3 +321,7 @@ It creates a temporary project, checks its autoload and paused-scene bridge,
 rejects a duplicate launch, and verifies that quitting retains the child exit
 status. This test does not change the open project or require a rendered window.
 See [RUNTIME_BRIDGE.md](RUNTIME_BRIDGE.md) for the wire and deferred handler seams.
+
+Call `run_project` with `scene:"res://examples/scenes/runner_demo.tscn"` and
+`headless:true`; expect a starting session ID. A second launch must report the
+active session rather than replacing it. Disabling the addon must stop its child.

@@ -71,12 +71,17 @@ func test_invalid_json_returns_parse_error() -> void:
 	var h = McpHandler.new()
 	var d := _parse(h.handle_message("{not json"))
 	assert_eq(d["error"]["code"], -32700)
-	assert_false(d.has("id"))
+	assert_true(d.has("id"), "JSON-RPC 2.0 error responses always carry id")
+	assert_eq(d["id"], null)
 
 func test_invalid_envelopes_return_specific_errors() -> void:
 	var h = McpHandler.new()
 	var invalid_request := _parse(h.handle_message('[1,2,3]'))
 	assert_eq(invalid_request["error"]["code"], -32600)
+	assert_eq(invalid_request["id"], null)
+	var bad_method := _parse(h.handle_message('{"jsonrpc":"2.0","id":9,"method":7}'))
+	assert_eq(bad_method["error"]["code"], -32600)
+	assert_eq(bad_method["id"], 9)
 	var invalid_params := _parse(h.handle_message('{"jsonrpc":"2.0","id":1,"method":"ping","params":[]}'))
 	assert_eq(invalid_params["error"]["code"], -32602)
 

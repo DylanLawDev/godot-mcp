@@ -53,8 +53,9 @@ func handle_message_async(text: String) -> Variant:
 func handle_request(text: String, http_context := {}) -> Variant:
 	var req := JsonRpc.parse(text)
 	if not req["ok"]:
-		var err := JsonRpc.error(req["id"], req["error_code"], req["error_message"], null, req["has_error_id"])
-		return _transport_response(400, err)
+		# JSON-RPC 2.0 requires `id` on every error; it is null when the request
+		# could not be identified. Modern MCP revisions may omit it instead.
+		return _transport_response(400, JsonRpc.error(req["id"], req["error_code"], req["error_message"]))
 	if req["message_type"] == "response":
 		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
 	if req["is_notification"] and req["method"] != "notifications/initialized":

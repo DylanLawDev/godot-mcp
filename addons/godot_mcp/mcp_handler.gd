@@ -111,8 +111,14 @@ func _select_protocol(req: Dictionary, http_context := {}) -> Dictionary:
 		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
 	var meta: Dictionary = params.get("_meta", {})
 	if not meta.has(META_PROTOCOL_VERSION):
-		if req["method"] == "server/discover" or _is_modern_context(http_context):
+		if req["method"] == "server/discover" or (_modern_enabled and _is_modern_context(http_context)):
 			return {"ok": false, "code": -32602, "message": "Invalid params: modern request metadata is required"}
+		# A legacy-shaped body may only run under the legacy revision (or no
+		# header at all, for clients that predate it). Any other announced
+		# version is rejected instead of silently downgraded.
+		var header_version: String = http_context.get("headers", {}).get("mcp-protocol-version", "")
+		if header_version != "" and header_version != LEGACY_PROTOCOL_VERSION:
+			return _unsupported_version(header_version)
 		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
 	if typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
 		return {"ok": false, "code": -32602, "message": "Invalid params: modern protocolVersion metadata must be a string"}
@@ -124,12 +130,15 @@ func _select_protocol(req: Dictionary, http_context := {}) -> Dictionary:
 			return {"ok": false, "code": -32602, "message": "Invalid params: clientInfo requires string name and version"}
 	var requested: String = meta[META_PROTOCOL_VERSION]
 	if requested != MODERN_PROTOCOL_VERSION or not _modern_enabled:
-		return {
-			"ok": false, "status": 400, "code": -32022,
-			"message": "Unsupported protocol version: " + requested,
-			"data": {"supported": _supported_versions(), "requested": requested},
-		}
+		return _unsupported_version(requested)
 	return {"ok": true, "modern": true, "version": requested, "client_capabilities": meta[META_CLIENT_CAPABILITIES]}
+
+func _unsupported_version(requested: String) -> Dictionary:
+	return {
+		"ok": false, "status": 400, "code": -32022,
+		"message": "Unsupported protocol version: " + requested,
+		"data": {"supported": _supported_versions(), "requested": requested},
+	}
 
 func _supported_versions() -> Array:
 	var versions := [LEGACY_PROTOCOL_VERSION]
@@ -161,10 +170,11 @@ func _validate_modern_headers(req: Dictionary, protocol: Dictionary, http_contex
 			return {"ok": false, "message": "Header mismatch: Mcp-Name does not match request params"}
 	return {"ok": true}
 
+# Plain values must be visible ASCII; anything else (and any value that itself
+# matches the sentinel pattern) arrives Base64-encoded as =?base64?...?= and
+# must round-trip losslessly.
 func _decode_header_value(value: String) -> Dictionary:
-	if value.begins_with("=?base64?") or value.ends_with("?="):
-		if not value.begins_with("=?base64?") or not value.ends_with("?="):
-			return {"ok": false}
+	if value.begins_with("=?base64?") and value.ends_with("?=") and value.length() >= 11:
 		var encoded := value.substr(9, value.length() - 11)
 		if encoded.is_empty():
 			return {"ok": false}
@@ -179,8 +189,11 @@ func _decode_header_value(value: String) -> Dictionary:
 		if decoded.to_utf8_buffer() != raw:
 			return {"ok": false}
 		return {"ok": true, "value": decoded}
-	for byte in value.to_ascii_buffer():
-		if byte < 32 or byte > 126:
+	# to_ascii_buffer() silently replaces non-ASCII code points, so inspect
+	# the actual code points instead.
+	for i in range(value.length()):
+		var code := value.unicode_at(i)
+		if code < 32 or code > 126:
 			return {"ok": false}
 	return {"ok": true, "value": value}
 

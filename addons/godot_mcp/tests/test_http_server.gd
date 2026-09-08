@@ -182,6 +182,42 @@ func test_modern_headers_are_checked_before_tool_dispatch() -> void:
 	assert_eq(registry.calls, 1)
 	_server.stop()
 
+func test_unknown_protocol_header_is_rejected_instead_of_downgraded() -> void:
+	var registry := CountingRegistry.new()
+	var handler := McpHandler.new(registry, null, true)
+	_server = HttpServer.new(Callable(handler, "handle_request"))
+	assert_eq(_server.start(0), OK)
+	var legacy_call := '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"count","arguments":{}}}'
+	var unknown := _http_post(_server.get_port(), legacy_call, ["MCP-Protocol-Version: 2099-01-01", "Mcp-Method: tools/call", "Mcp-Name: count"])
+	assert_has(unknown, "HTTP/1.1 400 Bad Request")
+	assert_has(unknown, '"code":-32022')
+	assert_has(unknown, '"requested":"2099-01-01"')
+	assert_eq(registry.calls, 0)
+	var legacy_header := _http_post(_server.get_port(), legacy_call, ["MCP-Protocol-Version: 2025-06-18"])
+	assert_has(legacy_header, "HTTP/1.1 200 OK")
+	assert_eq(registry.calls, 1)
+	_server.stop()
+
+func test_non_ascii_name_must_be_encoded_and_partial_sentinel_is_plain() -> void:
+	var registry := CountingRegistry.new()
+	var handler := McpHandler.new(registry, null, true)
+	_server = HttpServer.new(Callable(handler, "handle_request"))
+	assert_eq(_server.start(0), OK)
+	var name := "cöunt"
+	var body := _modern_body("tools/call", {"name": name, "arguments": {}})
+	var raw := _http_post(_server.get_port(), body, ["MCP-Protocol-Version: 2026-07-28", "Mcp-Method: tools/call", "Mcp-Name: " + name])
+	assert_has(raw, "HTTP/1.1 400 Bad Request")
+	assert_has(raw, '"code":-32020')
+	assert_eq(registry.calls, 0)
+	var encoded := "=?base64?%s?=" % Marshalls.utf8_to_base64(name)
+	assert_has(_http_post(_server.get_port(), body, ["MCP-Protocol-Version: 2026-07-28", "Mcp-Method: tools/call", "Mcp-Name: " + encoded]), "HTTP/1.1 200 OK")
+	assert_eq(registry.calls, 1)
+	var plain := "count?="
+	var plain_body := _modern_body("tools/call", {"name": plain, "arguments": {}})
+	assert_has(_http_post(_server.get_port(), plain_body, ["MCP-Protocol-Version: 2026-07-28", "Mcp-Method: tools/call", "Mcp-Name: " + plain]), "HTTP/1.1 200 OK")
+	assert_eq(registry.calls, 2)
+	_server.stop()
+
 func test_modern_encoded_resource_name_matches_and_malformed_base64_fails() -> void:
 	var handler := McpHandler.new(null, null, true)
 	_server = HttpServer.new(Callable(handler, "handle_request"))

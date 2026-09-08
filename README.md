@@ -341,3 +341,6 @@ scenario runner as a background job. Example: `{"scenario_path":
 Capture paths are remapped into that run's managed directory using an execution
 copy; the source JSON is unchanged. One background scenario/build job may run at
 a time, independently of the interactive session. Poll with get_scenario_result.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

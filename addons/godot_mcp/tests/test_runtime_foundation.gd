@@ -190,3 +190,19 @@ func test_exited_process_drains_more_than_one_poll_of_output() -> void:
 	assert_eq(actual, content)
 	DirAccess.remove_absolute(path)
 	jobs.shutdown()
+
+func test_dropped_peer_cannot_restore_connection_and_payload_progress_is_live() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var peer := FakePeer.new()
+	var item := {"id": id, "peer": peer}
+	manager.sessions[id]._peer = peer
+	manager.sessions[id].state = "running"
+	manager.sessions[id]._heartbeat = 0
+	manager._note_activity(item, 65536)
+	assert_true(manager.sessions[id].bridge_connected)
+	assert_true(manager.sessions[id]._heartbeat > 0)
+	manager._receive(item, {"session_id": "wrong", "kind": "heartbeat"})
+	manager._receive(item, {"session_id": id, "kind": "heartbeat"})
+	assert_false(manager.sessions[id].bridge_connected)
+	manager.shutdown()

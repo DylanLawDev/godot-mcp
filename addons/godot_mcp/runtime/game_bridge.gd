@@ -49,10 +49,12 @@ func _process(_delta: float) -> void:
 		if read[0] == OK:
 			for message in _wire.feed(read[1]):
 				_receive(message)
+				if _quitting:
+					break
 		if _wire.error != "":
 			_peer.disconnect_from_host()
 			return
-	if not _accepted:
+	if _quitting or not _accepted:
 		return
 	if scene_ready and not _ready_sent:
 		_send({"kind": "ready", "capabilities": {"rendering": DisplayServer.get_name() != "headless", "commands": handlers.keys()}})
@@ -68,6 +70,8 @@ func _process(_delta: float) -> void:
 			_tasks.erase(id)
 
 func _receive(message: Dictionary) -> void:
+	if _quitting:
+		return
 	if message.get("session_id") != session_id:
 		_peer.disconnect_from_host()
 		return

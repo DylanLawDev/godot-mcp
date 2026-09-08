@@ -4,12 +4,10 @@ static func clean_log(text: String) -> String:
 	var ansi := RegEx.new()
 	ansi.compile("\\x1b\\[[0-?]*[ -/]*[@-~]")
 	var plain := ansi.sub(text, "", true)
-	var out := ""
-	for character in plain:
-		var code := character.unicode_at(0)
-		if code >= 32 or code in [9, 10, 13]:
-			out += character
-	return out
+	var controls := RegEx.new()
+	controls.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]")
+	return controls.sub(plain, "", true)
+
 static func clean_value(value: Variant, depth: int = 0) -> Variant:
 	if depth > 16:
 		return "[truncated]"

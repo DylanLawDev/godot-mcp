@@ -15,57 +15,243 @@ const RuntimeTools = preload("res://addons/godot_mcp/tools/runtime_tools.gd")
 const UidTools = preload("res://addons/godot_mcp/tools/uid_tools.gd")
 const ResourceRegistry = preload("res://addons/godot_mcp/resource_registry.gd")
 
-const PROTOCOL_VERSION := "2025-06-18"
+const LEGACY_PROTOCOL_VERSION := "2025-06-18"
+const MODERN_PROTOCOL_VERSION := "2026-07-28"
+const PROTOCOL_VERSION := LEGACY_PROTOCOL_VERSION
 const SERVER_NAME := "godot-mcp"
-const SERVER_VERSION := "0.1.0"
+const SERVER_VERSION := "0.2.0"
+const META_PROTOCOL_VERSION := "io.modelcontextprotocol/protocolVersion"
+const META_CLIENT_CAPABILITIES := "io.modelcontextprotocol/clientCapabilities"
+const META_CLIENT_INFO := "io.modelcontextprotocol/clientInfo"
 
 var _registry
 var _resources
+var _modern_enabled: bool
 
-func _init(registry = null, resources = null) -> void:
+func _init(registry = null, resources = null, modern_enabled := true) -> void:
 	var project = ProjectTools.new()
 	var scene = SceneTools.new()
 	_registry = registry if registry != null else _build_default_registry(project, scene)
 	_resources = resources if resources != null else _build_default_resource_registry(project, scene)
+	_modern_enabled = modern_enabled
 
-# Single seam for the HTTP server AND tests.
-# Returns the serialized JSON-RPC response, or "" for notifications (server replies 202, no body).
+# Backward-compatible String adapter retained for unit tests and embedders.
+# Deferred tool results are cancelled here, exactly like the registry's
+# synchronous seam, so callers of this adapter never block.
 func handle_message(text: String) -> String:
+	var out = handle_request(text)
+	if out is ToolRegistry.Deferred:
+		out.cancel("This tool requires deferred transport dispatch")
+		out = out.value
+	return out["body"]
+
+# Body-only asynchronous adapter: a serialized String, or a Deferred that
+# resolves to one once a runtime operation completes.
+func handle_message_async(text: String) -> Variant:
+	var out = handle_request(text)
+	if out is ToolRegistry.Deferred:
+		return out.transform(func(response): return response["body"])
+	return out["body"]
+
+# Structured transport seam. Returns {status, body, content_type}, or a
+# Deferred that resolves to that shape. HTTP context is intentionally
+# request-local; no negotiated version or client metadata is stored on the
+# handler.
+func handle_request(text: String, http_context := {}) -> Variant:
 	var req := JsonRpc.parse(text)
 	if not req["ok"]:
-		return JSON.stringify(JsonRpc.error(null, -32700, "Parse error"))
-	var resp = _handle(req)
+		# JSON-RPC 2.0 requires `id` on every error and uses null when the request
+		# cannot be identified. The modern schema makes `id` optional, so a request
+		# that announced a modern version omits it instead of sending null.
+		var include_id: bool = req["has_error_id"] or not _is_modern_context(http_context)
+		return _transport_response(400, JsonRpc.error(req["id"], req["error_code"], req["error_message"], null, include_id))
+	if req["message_type"] == "response":
+		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
+	if req["is_notification"] and req["method"] != "notifications/initialized":
+		return _accepted()
+	var protocol := _select_protocol(req, http_context)
+	if not protocol["ok"]:
+		return _transport_response(protocol.get("status", 400), JsonRpc.error(
+			req["id"], protocol["code"], protocol["message"], protocol.get("data")))
+	if protocol["modern"] and not http_context.is_empty():
+		var header_check := _validate_modern_headers(req, protocol, http_context)
+		if not header_check["ok"]:
+			return _transport_response(400, JsonRpc.error(req["id"], -32020, header_check["message"]))
+	var resp = _handle(req, protocol)
 	if resp == null:
-		return ""
-	return JSON.stringify(resp)
+		return _accepted()
+	if resp is ToolRegistry.Deferred:
+		return resp.transform(func(envelope): return _transport_response(_status_for(protocol, envelope), envelope))
+	return _transport_response(_status_for(protocol, resp), resp)
 
-# Production transport can retain the connection while a runtime operation completes.
-func handle_message_async(text: String) -> Variant:
-	var req := JsonRpc.parse(text)
-	if not req["ok"] or req.get("method") != "tools/call":
-		return handle_message(text)
+# Modern requests map an unknown RPC method to HTTP 404; everything else is 200.
+func _status_for(protocol: Dictionary, envelope: Dictionary) -> int:
+	if protocol["modern"] and envelope.has("error") and envelope["error"]["code"] == -32601:
+		return 404
+	return 200
+
+func _accepted() -> Dictionary:
+	return {"status": 202, "body": "", "content_type": "application/json"}
+
+func _transport_response(status: int, envelope: Dictionary) -> Dictionary:
+	return {"status": status, "body": JSON.stringify(envelope), "content_type": "application/json"}
+
+func _is_modern_context(http_context: Dictionary) -> bool:
+	return http_context.get("headers", {}).get("mcp-protocol-version", "") == MODERN_PROTOCOL_VERSION
+
+# A request is modern only when its metadata carries the reserved protocol
+# version key. Legacy requests may legitimately send `_meta` (for example a
+# `progressToken`), so the mere presence of `_meta` must not select the
+# modern path.
+func _select_protocol(req: Dictionary, http_context := {}) -> Dictionary:
 	if req["is_notification"]:
-		return ""
+		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
 	var params: Dictionary = req["params"]
-	var args: Variant = params.get("arguments", {})
-	if not args is Dictionary or not params.get("name", "") is String:
-		return JSON.stringify(JsonRpc.error(req.id, -32602, "Invalid tool arguments"))
-	var result: Variant = _registry.call_tool_async(params.get("name", ""), args)
-	if result is ToolRegistry.Deferred:
-		return result.transform(func(value): return JSON.stringify(JsonRpc.result(req.id, value)))
-	return JSON.stringify(JsonRpc.result(req.id, result))
+	if params.has("_meta") and typeof(params["_meta"]) != TYPE_DICTIONARY:
+		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
+	var meta: Dictionary = params.get("_meta", {})
+	if not meta.has(META_PROTOCOL_VERSION):
+		if req["method"] == "server/discover" or (_modern_enabled and _is_modern_context(http_context)):
+			return {"ok": false, "code": -32602, "message": "Invalid params: modern request metadata is required"}
+		# A legacy-shaped body may only run under the legacy revision (or no
+		# header at all, for clients that predate it). Any other announced
+		# version is rejected instead of silently downgraded.
+		var header_version: String = http_context.get("headers", {}).get("mcp-protocol-version", "")
+		if header_version != "" and header_version != LEGACY_PROTOCOL_VERSION:
+			return _unsupported_version(header_version)
+		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
+	if typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
+		return {"ok": false, "code": -32602, "message": "Invalid params: modern protocolVersion metadata must be a string"}
+	if not meta.has(META_CLIENT_CAPABILITIES) or typeof(meta[META_CLIENT_CAPABILITIES]) != TYPE_DICTIONARY:
+		return {"ok": false, "code": -32602, "message": "Invalid params: modern clientCapabilities metadata is required"}
+	if meta.has(META_CLIENT_INFO):
+		var client_info = meta[META_CLIENT_INFO]
+		if typeof(client_info) != TYPE_DICTIONARY or typeof(client_info.get("name")) != TYPE_STRING or typeof(client_info.get("version")) != TYPE_STRING:
+			return {"ok": false, "code": -32602, "message": "Invalid params: clientInfo requires string name and version"}
+	var requested: String = meta[META_PROTOCOL_VERSION]
+	if requested != MODERN_PROTOCOL_VERSION or not _modern_enabled:
+		return _unsupported_version(requested)
+	return {"ok": true, "modern": true, "version": requested, "client_capabilities": meta[META_CLIENT_CAPABILITIES]}
 
-func _handle(req: Dictionary):
+func _unsupported_version(requested: String) -> Dictionary:
+	return {
+		"ok": false, "status": 400, "code": -32022,
+		"message": "Unsupported protocol version: " + requested,
+		"data": {"supported": _supported_versions(), "requested": requested},
+	}
+
+func _supported_versions() -> Array:
+	var versions := [LEGACY_PROTOCOL_VERSION]
+	if _modern_enabled:
+		versions.append(MODERN_PROTOCOL_VERSION)
+	return versions
+
+func _validate_modern_headers(req: Dictionary, protocol: Dictionary, http_context: Dictionary) -> Dictionary:
+	var headers: Dictionary = http_context.get("headers", {})
+	var values: Dictionary = http_context.get("header_values", {})
+	for required in ["mcp-protocol-version", "mcp-method"]:
+		if not values.has(required) or values[required].size() != 1:
+			return {"ok": false, "message": "Header mismatch: %s must appear exactly once" % required}
+	if headers.get("mcp-protocol-version", "") != protocol["version"]:
+		return {"ok": false, "message": "Header mismatch: MCP-Protocol-Version must match request metadata"}
+	if headers.get("mcp-method", "") != req["method"]:
+		return {"ok": false, "message": "Header mismatch: Mcp-Method must match request method"}
+	var expected_name = null
+	var needs_name: bool = req["method"] in ["tools/call", "resources/read"]
+	if req["method"] == "tools/call":
+		expected_name = req["params"].get("name")
+	elif req["method"] == "resources/read":
+		expected_name = req["params"].get("uri")
+	if needs_name:
+		if typeof(expected_name) != TYPE_STRING or not values.has("mcp-name") or values["mcp-name"].size() != 1:
+			return {"ok": false, "message": "Header mismatch: Mcp-Name is required"}
+		var decoded := _decode_header_value(headers["mcp-name"])
+		if not decoded["ok"] or decoded["value"] != expected_name:
+			return {"ok": false, "message": "Header mismatch: Mcp-Name does not match request params"}
+	return {"ok": true}
+
+# Plain values must be visible ASCII; anything else (and any value that itself
+# matches the sentinel pattern) arrives Base64-encoded as =?base64?...?= and
+# must round-trip losslessly.
+func _decode_header_value(value: String) -> Dictionary:
+	if value.begins_with("=?base64?") and value.ends_with("?=") and value.length() >= 11:
+		var encoded := value.substr(9, value.length() - 11)
+		if encoded.is_empty():
+			return {"ok": false}
+		var base64_pattern := RegEx.new()
+		base64_pattern.compile("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
+		if base64_pattern.search(encoded) == null:
+			return {"ok": false}
+		var raw := Marshalls.base64_to_raw(encoded)
+		if Marshalls.raw_to_base64(raw) != encoded:
+			return {"ok": false}
+		var decoded := raw.get_string_from_utf8()
+		if decoded.to_utf8_buffer() != raw:
+			return {"ok": false}
+		return {"ok": true, "value": decoded}
+	# to_ascii_buffer() silently replaces non-ASCII code points, so inspect
+	# the actual code points instead.
+	for i in range(value.length()):
+		var code := value.unicode_at(i)
+		if code < 32 or code > 126:
+			return {"ok": false}
+	return {"ok": true, "value": value}
+
+func _server_capabilities() -> Dictionary:
+	return {"tools": {}, "resources": {}}
+
+func _server_metadata() -> Dictionary:
+	return {"io.modelcontextprotocol/serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION}}
+
+func _handle(req: Dictionary, protocol := {"modern": false}):
+	var method: String = req["method"]
+	var id = req["id"]
+	if protocol["modern"]:
+		if method == "server/discover":
+			return JsonRpc.result(id, {
+				"supportedVersions": _supported_versions(),
+				"capabilities": _server_capabilities(),
+				"resultType": "complete",
+				"ttlMs": 0,
+				"cacheScope": "private",
+				"_meta": _server_metadata(),
+			})
+		# Handshake and ping were removed in 2026-07-28; they never reach the
+		# legacy dispatch path from a modern request.
+		if method in ["initialize", "notifications/initialized", "ping"]:
+			return JsonRpc.error(id, -32601, "Method not found: " + method)
+	var response = _dispatch_method(req)
+	if not protocol["modern"] or response == null:
+		return response
+	if response is ToolRegistry.Deferred:
+		# Runtime tools resolve later; decorate the envelope when it completes.
+		return response.transform(func(envelope): return _decorate_modern_envelope(envelope, method))
+	return _decorate_modern_envelope(response, method)
+
+func _decorate_modern_envelope(envelope: Dictionary, method: String) -> Dictionary:
+	if envelope.has("result"):
+		envelope["result"] = _decorate_modern_result(envelope["result"], method)
+	return envelope
+
+func _decorate_modern_result(value, method: String) -> Dictionary:
+	var result: Dictionary = value.duplicate(true) if typeof(value) == TYPE_DICTIONARY else {"value": value}
+	result["resultType"] = "complete"
+	var metadata: Dictionary = result.get("_meta", {}).duplicate(true)
+	metadata.merge(_server_metadata(), true)
+	result["_meta"] = metadata
+	if method in ["server/discover", "tools/list", "resources/list", "resources/read", "resources/templates/list"]:
+		result["ttlMs"] = 0
+		result["cacheScope"] = "private"
+	return result
+
+func _dispatch_method(req: Dictionary):
 	var method: String = req["method"]
 	var id = req["id"]
 	match method:
 		"initialize":
-			var pv = req["params"].get("protocolVersion", PROTOCOL_VERSION)
-			if typeof(pv) != TYPE_STRING:
-				pv = PROTOCOL_VERSION
 			return JsonRpc.result(id, {
-				"protocolVersion": pv,
-				"capabilities": {"tools": {}, "resources": {}},
+				"protocolVersion": LEGACY_PROTOCOL_VERSION,
+				"capabilities": _server_capabilities(),
 				"serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
 			})
 		"notifications/initialized":
@@ -76,9 +262,18 @@ func _handle(req: Dictionary):
 			return JsonRpc.result(id, {"tools": _registry.list_tools()})
 		"tools/call":
 			var p: Dictionary = req["params"]
-			return JsonRpc.result(id, _registry.call_tool(str(p.get("name", "")), p.get("arguments", {})))
+			var name = p.get("name")
+			var args = p.get("arguments", {})
+			if typeof(name) != TYPE_STRING or typeof(args) != TYPE_DICTIONARY:
+				return JsonRpc.error(id, -32602, "Invalid params: tools/call requires a string name and object arguments")
+			var result = _registry.call_tool_async(name, args)
+			if result is ToolRegistry.Deferred:
+				return result.transform(func(value): return JsonRpc.result(id, value))
+			return JsonRpc.result(id, result)
 		"resources/list":
 			return JsonRpc.result(id, {"resources": _resources.list_resources()})
+		"resources/templates/list":
+			return JsonRpc.result(id, {"resourceTemplates": []})
 		"resources/read":
 			var rp: Dictionary = req["params"]
 			var uri := str(rp.get("uri", ""))

@@ -64,7 +64,7 @@ func test_sync_adapter_cancels_deferred_and_notifications_do_not_run() -> void:
 	assert_true(reg.call_tool("later", {}).isError)
 	var count := cancelled
 	var handler := Handler.new(reg)
-	assert_eq(handler.handle_message_async('{"method":"tools/call","params":{"name":"later"}}'), "")
+	assert_eq(handler.handle_message_async('{"jsonrpc":"2.0","method":"tools/call","params":{"name":"later"}}'), "")
 	assert_eq(cancelled, count)
 
 func test_session_request_without_connection_and_summary_redaction() -> void:

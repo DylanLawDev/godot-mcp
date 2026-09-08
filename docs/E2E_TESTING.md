@@ -6,7 +6,7 @@ editor is open**, because the editor *is* the server.
 
 ## Prerequisites
 
-- Godot 4.6.x (`godot4` on PATH, or substitute your binary).
+- Godot 4.6.1 or 4.7.1 (`godot4` on PATH, or substitute your binary).
 - `curl` for the raw handshake checks.
 - The `godot_mcp` addon present at `addons/godot_mcp/` and enabled.
 - Default port: `8765` (override with project setting `godot_mcp/port`).
@@ -28,7 +28,7 @@ If the plugin is not yet enabled: **Project → Project Settings → Plugins →
 
 ## 2. Verify the MCP handshake with curl
 
-**initialize**
+**Legacy initialize (`2025-06-18`)**
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
@@ -36,14 +36,47 @@ curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
 Expect: `result.protocolVersion = "2025-06-18"`, `result.capabilities.tools` present,
 `result.serverInfo.name = "godot-mcp"`.
 
-**tools/list** — expect all 14 tool names.
+**Modern discovery (`2026-07-28`)**
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: server/discover' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"curl","version":"1"}}}}'
+```
+
+Expect HTTP 200 with `result.resultType = "complete"`,
+`supportedVersions = ["2025-06-18", "2026-07-28"]`, tools/resources capabilities,
+server identity metadata, `ttlMs = 0`, and `cacheScope = "private"`.
+
+**Modern read-only resource request**
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: resources/read' \
+  -H 'Mcp-Name: godot://project/info' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"godot://project/info","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+Expect HTTP 200, a fresh `contents` value, `resultType = "complete"`, and private
+zero-TTL cache fields. Missing/mismatched modern headers produce HTTP 400;
+unknown modern RPC methods produce 404. A disallowed browser Origin produces
+403 before dispatch.
+
+**tools/list** — expect all 56 tool names.
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
-Expect: `read_file`, `list_dir`, `search_project`, `create_script`, `edit_script`,
-`validate_script`, `get_project_settings`, `list_project_resources`, `get_project_info`,
-`get_scene_tree`, `get_node_properties`, `create_node`, `delete_node`, `modify_node`.
+Expect 56 distinct descriptors: the 40 editor tools (including `read_file`,
+`validate_script`, `get_project_info`, `get_scene_tree`, `capture_texture`,
+`get_output_log`, `get_input_actions`, and `update_project_uids`) plus the 16
+managed runtime tools (`run_project` through `export_build`).
 
 ## 3. Exercise each tool against the `examples/` fixtures
 
@@ -170,12 +203,12 @@ claude mcp add --transport http godot http://127.0.0.1:8765/mcp
 claude mcp list   # "godot" should appear and be reachable
 ```
 
-In a Claude Code session, confirm the 14 tools are listed and that asking Claude
+In a Claude Code session, confirm all 56 tools are listed and that asking Claude
 to read a project file invokes `read_file`.
 
 ## Notes / known limitations (v1)
 
-- **Loopback only, no auth.** Server binds `127.0.0.1`. A bearer token is a later add.
+- **Loopback only, no auth.** Server binds `127.0.0.1`; Origin validation is not authentication. OAuth is not implemented.
 - **Editor must be open.** No headless per-request spawning — the editor hosts the server.
 - **One editor = one port.** Two projects → two editors → two ports.
 - Path handling rejects `..` traversal but does not normalize `user://` or

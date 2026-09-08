@@ -24,7 +24,7 @@ func _enter_tree() -> void:
 	_runtime = Sessions.new()
 	Engine.set_meta("GodotMCPRuntime", _runtime)
 	_handler = McpHandler.new()
-	_server = HttpServer.new(Callable(_handler, "handle_message_async"))
+	_server = HttpServer.new(Callable(_handler, "handle_request"))
 	var port := _resolve_port()
 	var err: int = _server.start(port)
 	if err == OK:

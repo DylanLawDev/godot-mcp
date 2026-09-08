@@ -45,6 +45,12 @@ func _process(_delta: float) -> bool:
 	return false
 func _finish(completed: bool) -> void:
 	_started = false
+	# Include scene/autoload shutdown callbacks in the validation verdict.
+	current_scene = null
+	for child in root.get_children():
+		if is_instance_valid(child) and child.get_parent() == root:
+			child.free()
+	await process_frame
 	var passed: bool = completed and logger.failures == 0
 	var file := FileAccess.open(_out, FileAccess.WRITE)
 	if file == null:

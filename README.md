@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **55 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **56 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -386,6 +386,16 @@ copy in the job artifact directory. One scenario/validation/export job runs at a
 
 Performance sample data is capped at 4 MiB; oversized requests finish early with
 `truncated:true`, preserving collected samples instead of failing the bridge limit.
+
+`export_build({preset:"Linux",mode:"release",timeout_seconds:600})` starts an
+isolated export; poll `export_build({job_id:"…"})` for stages, exit status,
+preset/mode/version and an absolute-path artifact manifest with byte sizes.
+The preset must already exist and target Linux, Windows Desktop or macOS, with
+matching installed/custom templates. Outputs use a fresh managed directory and
+are verified nonempty before success. Signing/export prerequisites remain the
+host's responsibility. Saved export credentials are copied into the temporary
+cache when present, redacted from retained build logs, and removed with the copy.
+Exports are never executed or published, and the runtime bridge is not activated.
 Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
 to one complete physics step. Both sides reserve a conservative deadline using
 Godot's minimum tick rate, including games that change the rate at runtime.

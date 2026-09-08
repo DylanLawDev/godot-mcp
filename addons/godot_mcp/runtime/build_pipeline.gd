@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+const Export = preload("res://addons/godot_mcp/runtime/export_support.gd")
 const LogSanitizer = preload("res://addons/godot_mcp/runtime/log_sanitizer.gd")
 const Snapshot = preload("res://addons/godot_mcp/runtime/project_snapshot.gd")
 var records: Dictionary = {}
@@ -23,7 +24,11 @@ func start(kind: String, options: Dictionary) -> Dictionary:
 	active_id = id
 	manager.background_id = id
 	records[id] = {"job_id": id, "kind": kind, "state": "running", "stage": "snapshot", "stages": [{"name": "snapshot", "state": "running"}], "diagnostics": [], "artifacts": [], "godot_version": Engine.get_version_info().string, "started_at": Time.get_datetime_string_from_system(true), "_started": Time.get_ticks_msec(), "_deadline": Time.get_ticks_msec() + int(options.timeout_seconds * 1000), "_directory": directory, "_snapshot": directory.path_join("project snapshot"), "_options": options.duplicate(true)}
-	_copy = Snapshot.new(ProjectSettings.globalize_path("res://").trim_suffix("/"), records[id]._snapshot)
+	if kind == "export":
+		records[id]["preset"] = options.preset
+		records[id]["mode"] = options.mode
+		records[id]["platform"] = options.platform
+	_copy = Snapshot.new(ProjectSettings.globalize_path("res://").trim_suffix("/"), records[id]._snapshot, false, options.get("snapshot_keep_paths", []))
 	_cleanup = false
 	return status(id, kind)
 
@@ -86,6 +91,13 @@ func poll() -> void:
 	job.stages[-1].state = "passed"
 	if job.stage == "import":
 		_after_import(job)
+	elif job.stage == "export":
+		var artifacts := Export.manifest(job._directory.path_join("output"), job._directory.path_join("output").path_join(job._options.filename))
+		if not artifacts.ok:
+			_finish(false, artifacts.error)
+			return
+		job.artifacts.append_array(artifacts.value)
+		_finish(true, "")
 	elif job.stage == "startup":
 		if not report is Dictionary or not report.get("completed") is bool or not report.completed or not report.get("passed") is bool or not report.passed:
 			_finish(false, "Startup exited early or did not produce a passing completion report")
@@ -112,6 +124,9 @@ func _startup_report(job: Dictionary) -> Variant:
 	return report
 
 func _after_import(job: Dictionary) -> void:
+	if job.kind == "export":
+		_start_export(job)
+		return
 	var scene: String = job._options.get("scene", "")
 	if scene == "":
 		var config := ConfigFile.new()
@@ -134,10 +149,8 @@ func _launch_stage(stage: String, args: PackedStringArray) -> void:
 		_finish(false, result.error)
 
 func _retain_output(job: Dictionary, process: Dictionary) -> void:
-	for entry in process.get("output", []):
-		var diagnostic: Dictionary = entry.duplicate(true)
+	for diagnostic in sanitized_output(process.get("output", []), job._options.get("redactions", [])):
 		diagnostic["stage"] = job.stage
-		diagnostic["text"] = clean_log(str(diagnostic.get("text", "")))
 		job.diagnostics.append(diagnostic)
 	while job.diagnostics.size() > 1000:
 		job.diagnostics.pop_front()
@@ -197,5 +210,47 @@ func shutdown() -> void:
 	# No source-project files are changed; normal terminal paths remove the copy.
 	active_id = ""
 
+func _start_export(job: Dictionary) -> void:
+	var output: String = job._directory.path_join("output")
+	if DirAccess.make_dir_recursive_absolute(output) != OK:
+		_finish(false, "Could not create export output directory")
+		return
+	# Godot keeps signing/encryption credentials outside export_presets.cfg.
+	# Copy only this saved file into the isolated cache; never report its contents.
+	var credentials := ProjectSettings.globalize_path("res://.godot/export_credentials.cfg")
+	if FileAccess.file_exists(credentials):
+		if DirAccess.copy_absolute(credentials, job._snapshot.path_join(".godot/export_credentials.cfg")) != OK:
+			_finish(false, "Could not copy saved export credentials into snapshot")
+			return
+		var config := ConfigFile.new()
+		if config.load(credentials) == OK:
+			for section in config.get_sections():
+				for key in config.get_section_keys(section):
+					var secret: Variant = config.get_value(section, key)
+					if secret is String and secret != "":
+						job._options.redactions.append(secret)
+	_launch_stage("export", Export.arguments(job._snapshot, job._options.preset, job._options.mode, output.path_join(job._options.filename)))
+
 static func clean_log(text: String) -> String:
 	return LogSanitizer.clean_log(text)
+
+static func sanitized_output(output: Array, secrets: Array) -> Array:
+	# Pipe reads are arbitrary chunks. Reassemble each stream before redacting,
+	# including when stdout/stderr reads were interleaved by the process poller.
+	var streams := {}
+	for entry in output:
+		var source: String = str(entry.get("source", "stdout"))
+		if not streams.has(source):
+			streams[source] = {"source": source, "text": "", "timestamp_msec": entry.get("timestamp_msec"), "sequence": entry.get("sequence")}
+		streams[source].text += str(entry.get("text", ""))
+		streams[source]["last_timestamp_msec"] = entry.get("timestamp_msec")
+	var result := []
+	for stream in streams.values():
+		var text := clean_log(stream.text)
+		for secret in secrets:
+			if secret is String and secret != "":
+				text = text.replace(secret, "[REDACTED]")
+		stream["truncated"] = text.length() > 512 * 1024
+		stream.text = text.right(512 * 1024)
+		result.append(stream)
+	return result

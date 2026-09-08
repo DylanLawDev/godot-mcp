@@ -391,3 +391,17 @@ and removed snapshots. `test_build_tools.gd` checks cache exclusions, preservati
 of autoload/other-plugin settings and error retention after output-ring eviction.
 In a live editor, start validation then ping and inspect an interactive session
 while validation imports its separate copy.
+
+### Desktop export
+
+With matching installed templates, run `addons/godot_mcp/tests/run_export_integration.sh debug`
+and again with `release` (honors `$GODOT`). Linux fixtures verify ELF package bytes,
+sidecar manifests, background-lane isolation, unchanged presets and copy cleanup.
+The harness excludes development addon files in its saved preset. It does not run
+the exported executable. Unit tests check argument arrays (including spaces and
+shell-like preset names), missing/non-desktop presets/templates, missing/empty
+output, sidecars, polling constraints and ANSI-free retained logs.
+
+Runtime-tool implementation validation used Godot 4.6.1 for unit/runtime tests and
+Godot 4.7.1 with existing host templates for actual Linux x86_64 debug/release exports.
+Windows and macOS export execution remains untested on this Linux host.

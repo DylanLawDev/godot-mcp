@@ -326,3 +326,6 @@ values using the editor tool's `var_to_str` encoding. Example: `{"session_id":
 for all inspectable properties, or pass `[]` for none. Unknown names fail before
 getters run. Values reflect live state, not saved scene defaults; oversized
 responses should be narrowed with the property filter.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

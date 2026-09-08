@@ -58,3 +58,18 @@ func disconnect_from_host() -> void:
 
 func pending_bytes() -> int:
 	return _queued_bytes
+
+func prioritize_last_frame() -> void:
+	# Shutdown cancels pending work. Discard unsent replies, but never interrupt
+	# the partially written frame: its bytes must finish before the quit reply.
+	if _out.is_empty():
+		return
+	var last: PackedByteArray = _out.pop_back()
+	if _offset > 0 and not _out.is_empty():
+		var partial: PackedByteArray = _out[0]
+		_out = [partial, last]
+		_queued_bytes = partial.size() - _offset + last.size()
+	else:
+		_out = [last]
+		_offset = 0
+		_queued_bytes = last.size()

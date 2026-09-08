@@ -188,6 +188,8 @@ func _drop(item: Dictionary) -> void:
 	if id != "" and sessions.has(id):
 		sessions[id].bridge_connected = false
 		sessions[id]._peer = null
+		if _stops.has(id):
+			_stops[id].quit_sent = false
 		for rid in _pending.keys():
 			if _pending.has(rid) and _pending[rid].session_id == id:
 				_pending[rid].task.cancel("Runtime bridge disconnected")
@@ -232,9 +234,9 @@ func stop_session(id: String, grace_seconds: float):
 	for rid in _pending.keys():
 		if _pending.has(rid) and _pending[rid].session_id == id:
 			_pending[rid].task.cancel("Session is stopping")
-	var quit_sent: bool = sessions[id].bridge_connected
-	if quit_sent:
-		request(id, "quit", {}, grace_seconds + 1.0)
+	var quit_sent := false
+	if sessions[id].bridge_connected:
+		quit_sent = _queue_quit(id, grace_seconds + 1.0)
 	sessions[id].state = "stopping"
 	sessions[id].termination_reason = "requested_stop"
 	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false, "quit_sent": quit_sent}
@@ -253,10 +255,13 @@ func _poll_stops() -> void:
 				_stops.erase(id)
 		if _stops.has(id):
 			if not stop.forced and not stop.quit_sent and sessions[id].bridge_connected:
-				request(id, "quit", {}, maxf(1, (stop.deadline - Time.get_ticks_msec()) / 1000.0))
-				stop.quit_sent = true
+				stop.quit_sent = _queue_quit(id, maxf(1, (stop.deadline - Time.get_ticks_msec()) / 1000.0))
 			stop.task.poll()
 			# HTTP cancellation affects only delivery, not the owned stop action.
 			# Keep the grace/kill state machine alive independently of the task.
 			if stop.forced and Time.get_ticks_msec() >= stop.deadline + 3000:
 				_stops.erase(id)
+
+func _queue_quit(id: String, timeout_seconds: float) -> bool:
+	var task = request(id, "quit", {}, timeout_seconds)
+	return not task.done or task.value.get("ok", false) == true

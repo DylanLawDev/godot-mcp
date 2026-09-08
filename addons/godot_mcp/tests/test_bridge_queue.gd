@@ -44,3 +44,17 @@ func test_quit_prevents_later_commands_in_same_batch() -> void:
 	assert_true(bridge._quitting)
 	assert_false(state.called)
 	bridge.free()
+
+func test_invalid_frame_prevents_later_game_dispatch() -> void:
+	var bridge = preload("res://addons/godot_mcp/runtime/game_bridge.gd").new()
+	bridge.session_id = "test"
+	bridge._accepted = true
+	var state := {"called": false}
+	bridge.handlers["mutate"] = func(_args):
+		state.called = true
+		return {"ok": true}
+	bridge._receive({"session_id": "wrong"})
+	bridge._receive({"session_id": "test", "request_id": "2", "command": "mutate", "args": {}})
+	assert_true(bridge._closed)
+	assert_false(state.called)
+	bridge.free()

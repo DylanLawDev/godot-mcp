@@ -45,6 +45,8 @@ static func validate(events: Variant) -> Dictionary:
 			total_frames += int(count)
 		if item.has("hold_frames") and (item.get("kind") == "mouse_motion" or not item.get("pressed", true)):
 			return {"ok": false, "error": "hold_frames requires a press event"}
+		if item.get("kind") == "mouse_button" and item.get("button", "").begins_with("wheel_") and item.has("hold_frames"):
+			return {"ok": false, "error": "Wheel input is momentary and cannot use hold_frames"}
 		var built := Synth.build(item)
 		if not built.ok:
 			return built
@@ -109,6 +111,8 @@ func _dispatch(item: Dictionary) -> Dictionary:
 		return built
 	Input.parse_input_event(built.event)
 	Input.flush_buffered_events()
+	if built.event is InputEventMouseButton and Synth._mask_bit(built.event.button_index) == 0:
+		return {"ok": true}
 	if item.get("kind") != "mouse_motion":
 		var key := ""
 		if built.event is InputEventKey:

@@ -53,27 +53,32 @@ class Fixture:
             [godot, "--headless", "--path", str(root), "--script", "addons/godot_mcp/tests/protocol_fixture_server.gd"],
             cwd=root,
             env=env,
-            text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
+        # Read the raw descriptor rather than a buffered text wrapper: readline()
+        # can buffer the port line together with Godot's banner, after which
+        # select() never reports readiness again and startup falsely times out.
         deadline = time.monotonic() + 15
-        output = []
+        output = b""
         self.port = None
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([self.process.stdout], [], [], 0.25)
-            if not ready:
-                if self.process.poll() is not None:
+        fd = self.process.stdout.fileno()
+        while self.port is None and time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.25)
+            if ready:
+                chunk = os.read(fd, 4096)
+                if not chunk:
                     break
-                continue
-            line = self.process.stdout.readline()
-            output.append(line)
-            if line.startswith("MCP_FIXTURE_PORT="):
-                self.port = int(line.split("=", 1)[1])
+                output += chunk
+                for line in output.decode("utf-8", "replace").splitlines():
+                    if line.startswith("MCP_FIXTURE_PORT="):
+                        self.port = int(line.split("=", 1)[1].strip())
+                        break
+            elif self.process.poll() is not None:
                 break
         if self.port is None:
             self.close()
-            raise RuntimeError("fixture failed to start:\n" + "".join(output))
+            raise RuntimeError("fixture failed to start:\n" + output.decode("utf-8", "replace"))
 
     def request(self, message, headers=None):
         body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode()

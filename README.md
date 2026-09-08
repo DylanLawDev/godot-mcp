@@ -334,3 +334,6 @@ with source and possible_duplicate tags because it can also represent a structur
 logger error. Example pagination: pass the previous next_sequence as after_sequence.
 Reads do not clear logs, and completed sessions remain queryable. A source gap
 reports truncated even when the retained editor-side ring itself has not filled.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

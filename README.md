@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **52 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **53 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -356,6 +356,13 @@ tick. Example: `{"session_id":"<id>","sections":["jobs","inventories"],
 [simulation adapter](docs/SIMULATION_ADAPTER.md); unavailable instrumentation is
 reported clearly. The included simulation_demo scene is a deterministic fixture,
 not an integration with an external settlement game.
+
+`advance_ticks({session_id,ticks})` advances 1–10000 authoritative simulation ticks
+through the adapter. It returns tick_before, tick_after, advanced_ticks and
+paused:true. The scheduler stays controlled for inspection; start a new session
+to resume ordinary play in this initial API. Commands have a 30-second game-side
+budget, yield between bounded work slices, and report completed ticks on failure.
+There is no rollback and no substitution of rendered/physics frames for game ticks.
 Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
 to one complete physics step. Both sides reserve a conservative deadline using
 Godot's minimum tick rate, including games that change the rate at runtime.

@@ -16,6 +16,7 @@ func _init(owner: Node) -> void:
 	simulation = Simulation.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["advance_ticks"] = Callable(simulation, "advance")
 	bridge.handlers["get_simulation_snapshot"] = Callable(simulation, "snapshot")
 	bridge.handlers["get_runtime_properties"] = Callable(self, "get_runtime_properties")
 	bridge.handlers["get_runtime_tree"] = Callable(self, "get_runtime_tree")
@@ -64,6 +65,7 @@ func _capture_after_draw(task, downscale: int, format: String) -> void:
 
 func cleanup() -> void:
 	input_sequence.release_all()
+	simulation.cleanup()
 
 func resize_game_window(args: Dictionary):
 	var task := Deferred.new()

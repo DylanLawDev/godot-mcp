@@ -31,3 +31,20 @@ does not exist are different from an unsupported section.
 This repository does not contain the user's settlement simulation. Integrating
 its real job scheduler, reservations, inventories, pathfinding, power and needs
 requires a separate change in that game repository.
+
+## Exact tick advancement
+
+Advertise can_advance_ticks:true only when both methods are implemented:
+
+- `mcp_simulation_set_controlled(enabled:bool) -> {ok:bool,error?:String}`:
+  stop automatic scheduling while enabled, retaining a responsive runtime bridge.
+- `mcp_simulation_advance_tick() -> {ok:bool,tick:int,error?:String}`:
+  perform exactly one complete simulation tick and return its new authoritative ID.
+
+The addon enters controlled mode, checks the tick, and validates each increment.
+It allows one advancement command at a time, yields between bounded work slices,
+and leaves controlled mode enabled after success or partial failure for inspection.
+Teardown disables controlled mode. A fresh session resumes ordinary play through
+the public API. The demo starts controlled for repeatability, while its visual
+_process frame counter continues independently. Failure error text includes a
+JSON object with actual tick/count progress when a snapshot remains available.

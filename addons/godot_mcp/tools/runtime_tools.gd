@@ -176,7 +176,20 @@ func get_simulation_snapshot(args: Dictionary) -> Variant:
 			filters[key] = args[key]
 	return runtime.request(id, "get_simulation_snapshot", filters)
 
+func advance_ticks(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not integer(args.get("ticks"), 1, 10000):
+		return failure("ticks must be an integer from 1 to 10000")
+	return runtime.request(id, "advance_ticks", {"ticks": args.ticks}, 35)
+
 func register_tools(reg) -> void:
+	reg.register("advance_ticks", "Advance an instrumented simulation by an exact tick count and leave its scheduler controlled/paused for inspection. Requires a game-side adapter; rendered frames are not simulation ticks.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "ticks": {"type": "integer", "minimum": 1, "maximum": 10000}}, "required": ["session_id", "ticks"]}, Callable(self, "advance_ticks"))
 	reg.register("get_simulation_snapshot", "Read a coherent game-instrumented simulation snapshot. Requires exactly one diagnostics adapter; unavailable sections are explicit, not fabricated.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "sections": {"type": "array", "maxItems": 6, "items": {"type": "string"}}, "entity_ids": {"type": "array", "maxItems": 1000, "items": {"type": "string"}}}, "required": ["session_id"]}, Callable(self, "get_simulation_snapshot"))
 	reg.register("get_runtime_errors", "Read retained session errors and startup stderr, with monotonic pagination and explicit truncation. Does not clear logs or query editor errors.",

@@ -348,3 +348,6 @@ capture manifests), and PNG artifact metadata. Completed assertion failures have
 passed:false; missing/malformed results and incompatible exit codes are failures.
 Large inline results are replaced with a result_path reference. Reads are cached
 after completion and do not parse files while the runner is writing them.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

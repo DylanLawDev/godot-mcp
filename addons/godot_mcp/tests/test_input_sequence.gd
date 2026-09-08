@@ -31,3 +31,17 @@ func test_wheel_events_are_momentary() -> void:
 	assert_true(sequence._dispatch({"kind": "mouse_button", "button": "wheel_up"}).ok)
 	assert_eq(sequence._held.size(), 0)
 	sequence.release_all()
+
+func test_synthesized_releases_clear_press_only_flags() -> void:
+	var mouse := {"kind": "mouse_button", "button": "left", "double_click": true, "position": [12, 34]}
+	var mouse_event = Sequence.Synth.build(Sequence.release_item(mouse)).event
+	assert_false(mouse_event.pressed)
+	assert_false(mouse_event.double_click)
+	assert_eq(mouse_event.position, Vector2(12, 34))
+	assert_true(mouse.double_click)
+	var key := {"kind": "key", "key": "A", "echo": true}
+	var key_event = Sequence.Synth.build(Sequence.release_item(key)).event
+	assert_false(key_event.pressed)
+	assert_false(key_event.echo)
+	assert_eq(key_event.keycode, KEY_A)
+	assert_true(key.echo)

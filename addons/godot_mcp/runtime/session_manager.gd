@@ -69,13 +69,15 @@ func request(id: String, command: String, args: Dictionary, timeout_seconds: flo
 		return task
 	_next_request += 1
 	var rid := str(_next_request)
-	_pending[rid] = {"session_id": id, "task": task}
+	_pending[rid] = {"session_id": id, "task": task, "command": command, "samples": []}
 	task.on_cancel = func(): _cancel_request(rid, id)
 	if not _send(sessions[id]._peer, {"request_id": rid, "session_id": id, "command": command, "args": args}):
 		task.cancel("Could not send runtime command (disconnected or payload too large)")
 	return task
 
 func _cancel_request(rid: String, id: String) -> void:
+	if _pending.has(rid) and not _pending[rid].samples.is_empty():
+		_pending[rid].task.resolve({"ok": false, "error": JSON.stringify({"message": "Performance sampling interrupted by cancellation, timeout, or bridge disconnect", "session_id": id, "partial": true, "samples": _pending[rid].samples})})
 	_pending.erase(rid)
 	if sessions.has(id):
 		_send(sessions[id]._peer, {"session_id": id, "command": "cancel", "request_id": rid, "args": {}})
@@ -196,6 +198,11 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 				error_entry["source"] = "runtime_logger"
 				_record_error(id, error_entry)
 			s._source_gap = s._source_gap or batch.get("truncated", false)
+		"progress":
+			var rid := str(message.get("request_id", ""))
+			if _pending.has(rid) and _pending[rid].session_id == id and _pending[rid].command == "sample_performance":
+				if message.get("sample") is Dictionary and _pending[rid].samples.size() < 2000:
+					_pending[rid].samples.append(message.sample)
 		"reply":
 			var rid := str(message.get("request_id", ""))
 			if _pending.has(rid) and _pending[rid].session_id == id:

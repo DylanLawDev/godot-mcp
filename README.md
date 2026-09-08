@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **53 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **54 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -363,6 +363,19 @@ paused:true. The scheduler stays controlled for inspection; start a new session
 to resume ordinary play in this initial API. Commands have a 30-second game-side
 budget, yield between bounded work slices, and report completed ticks on failure.
 There is no rollback and no substitution of rendered/physics frames for game ticks.
+
+`sample_performance({session_id,duration_seconds:2,interval_ms:100,
+custom_monitors:["demo/jobs_ms"]})` returns timestamped samples, per-metric
+count/min/max/mean/p95, units, and unavailable monitor names. Frame delta is
+sampled CPU frame duration, not GPU timing. Sampling follows actual process frames
+(including paused games); slow frames can reduce sample count and overshoot the
+requested duration. Missing custom timings are never inferred. The performance
+fixture registers deterministic demonstration values in milliseconds; real games
+must register their own measured `Performance` custom monitors. Interrupted calls
+return an error containing JSON with `partial:true` and received samples.
+
+Performance sample data is capped at 4 MiB; oversized requests finish early with
+`truncated:true`, preserving collected samples instead of failing the bridge limit.
 Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
 to one complete physics step. Both sides reserve a conservative deadline using
 Godot's minimum tick rate, including games that change the rate at runtime.

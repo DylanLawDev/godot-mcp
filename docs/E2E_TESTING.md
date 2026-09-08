@@ -372,3 +372,11 @@ without the adapter must return a clear unsupported-instrumentation error.
 
 Simulation integration advances 1 then 100 authoritative ticks, waits ten ordinary
 frames, and confirms both tick and inventory remain exactly 101.
+
+### Performance sampling
+
+Run `godot --headless --path . --script addons/godot_mcp/tests/integration_performance.gd -- --render`.
+The child is rendered and paused; verify its registered timing monitor, missing
+monitor reporting, monotonic samples, live tree inspection during a 30-second
+sample, and stop returning partial samples. Omit `--render` for a headless child.
+Run `test_performance_sampler.gd` for deterministic p95/mean and argument limits.

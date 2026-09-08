@@ -32,6 +32,11 @@ func _main() -> void:
 		failures.append("failure omitted diagnostics")
 	if tools.validate_project({"job_id": id}) != result:
 		failures.append("polling changed retained result")
+	if String.chr(27) in JSON.stringify(result):
+		failures.append("result contains raw terminal controls")
+	for artifact in result.value.artifacts:
+		if artifact.kind == "startup_report" and String.chr(27) in FileAccess.get_file_as_string(artifact.path):
+			failures.append("startup artifact contains raw terminal controls")
 	print("BUILD RESULT: ", JSON.stringify(result))
 	_finish()
 func _finish() -> void:

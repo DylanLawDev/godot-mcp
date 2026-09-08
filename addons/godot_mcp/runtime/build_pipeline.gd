@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+const LogSanitizer = preload("res://addons/godot_mcp/runtime/log_sanitizer.gd")
 const Snapshot = preload("res://addons/godot_mcp/runtime/project_snapshot.gd")
 var records: Dictionary = {}
 var active_id := ""
@@ -96,7 +97,7 @@ func _startup_report(job: Dictionary) -> Variant:
 	var parser := JSON.new()
 	if parser.parse(file.get_as_text()) != OK or not parser.data is Dictionary:
 		return null
-	var report: Dictionary = parser.data
+	var report: Dictionary = LogSanitizer.clean_value(parser.data)
 	job.artifacts.append({"path": path, "kind": "startup_report"})
 	if report.get("diagnostics") is Array:
 		for diagnostic in report.diagnostics.slice(0, 1000):
@@ -194,12 +195,4 @@ func shutdown() -> void:
 	active_id = ""
 
 static func clean_log(text: String) -> String:
-	var ansi := RegEx.new()
-	ansi.compile("\\x1b\\[[0-?]*[ -/]*[@-~]")
-	var plain := ansi.sub(text, "", true)
-	var out := ""
-	for character in plain:
-		var code := character.unicode_at(0)
-		if code >= 32 or code in [9, 10, 13]:
-			out += character
-	return out
+	return LogSanitizer.clean_log(text)

@@ -161,8 +161,28 @@ func test_interleaved_modern_and_legacy_requests_do_not_share_state() -> void:
 
 func test_modern_initialize_does_not_take_legacy_dispatch_path() -> void:
 	var h = McpHandler.new(null, null, true)
-	var d := _parse(h.handle_message(_modern_request(57, "initialize")))
-	assert_eq(d["error"]["code"], -32601)
+	for method in ["initialize", "ping"]:
+		var d := _parse(h.handle_message(_modern_request(57, method)))
+		assert_eq(d["error"]["code"], -32601, method)
+
+func test_legacy_meta_without_protocol_version_stays_legacy() -> void:
+	var h = McpHandler.new(null, null, true)
+	var body := '{"jsonrpc":"2.0","id":58,"method":"tools/list","params":{"_meta":{"progressToken":"p1"}}}'
+	var d := _parse(h.handle_message(body))
+	assert_true(d.has("result"), str(d))
+	assert_false(d["result"].has("resultType"))
+	var non_string := '{"jsonrpc":"2.0","id":59,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":7}}}'
+	assert_eq(_parse(h.handle_message(non_string))["error"]["code"], -32602)
+
+func test_unidentified_error_id_follows_announced_protocol_era() -> void:
+	var h = McpHandler.new(null, null, true)
+	var legacy = h.handle_request("{not json")
+	var legacy_body: Dictionary = _parse(legacy["body"])
+	assert_true(legacy_body.has("id"))
+	assert_eq(legacy_body["id"], null)
+	var modern = h.handle_request("{not json", {"headers": {"mcp-protocol-version": McpHandler.MODERN_PROTOCOL_VERSION}})
+	assert_eq(modern["status"], 400)
+	assert_false(_parse(modern["body"]).has("id"))
 
 
 func test_initialize_advertises_resources_capability() -> void:

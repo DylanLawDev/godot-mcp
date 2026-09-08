@@ -60,9 +60,11 @@ func handle_message_async(text: String) -> Variant:
 func handle_request(text: String, http_context := {}) -> Variant:
 	var req := JsonRpc.parse(text)
 	if not req["ok"]:
-		# JSON-RPC 2.0 requires `id` on every error; it is null when the request
-		# could not be identified. Modern MCP revisions may omit it instead.
-		return _transport_response(400, JsonRpc.error(req["id"], req["error_code"], req["error_message"]))
+		# JSON-RPC 2.0 requires `id` on every error and uses null when the request
+		# cannot be identified. The modern schema makes `id` optional, so a request
+		# that announced a modern version omits it instead of sending null.
+		var include_id: bool = req["has_error_id"] or not _is_modern_context(http_context)
+		return _transport_response(400, JsonRpc.error(req["id"], req["error_code"], req["error_message"], null, include_id))
 	if req["message_type"] == "response":
 		return _transport_response(400, JsonRpc.error(req["id"], -32600, "Invalid Request: client responses are not accepted"))
 	if req["is_notification"] and req["method"] != "notifications/initialized":
@@ -84,19 +86,26 @@ func _accepted() -> Dictionary:
 func _transport_response(status: int, envelope: Dictionary) -> Dictionary:
 	return {"status": status, "body": JSON.stringify(envelope), "content_type": "application/json"}
 
+func _is_modern_context(http_context: Dictionary) -> bool:
+	return http_context.get("headers", {}).get("mcp-protocol-version", "") == MODERN_PROTOCOL_VERSION
+
+# A request is modern only when its metadata carries the reserved protocol
+# version key. Legacy requests may legitimately send `_meta` (for example a
+# `progressToken`), so the mere presence of `_meta` must not select the
+# modern path.
 func _select_protocol(req: Dictionary) -> Dictionary:
 	if req["is_notification"]:
 		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
 	var params: Dictionary = req["params"]
-	if not params.has("_meta"):
+	if params.has("_meta") and typeof(params["_meta"]) != TYPE_DICTIONARY:
+		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
+	var meta: Dictionary = params.get("_meta", {})
+	if not meta.has(META_PROTOCOL_VERSION):
 		if req["method"] == "server/discover":
 			return {"ok": false, "code": -32602, "message": "Invalid params: modern request metadata is required"}
 		return {"ok": true, "modern": false, "version": LEGACY_PROTOCOL_VERSION}
-	if typeof(params["_meta"]) != TYPE_DICTIONARY:
-		return {"ok": false, "code": -32602, "message": "Invalid params: _meta must be an object"}
-	var meta: Dictionary = params["_meta"]
-	if not meta.has(META_PROTOCOL_VERSION) or typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
-		return {"ok": false, "code": -32602, "message": "Invalid params: modern protocolVersion metadata is required"}
+	if typeof(meta[META_PROTOCOL_VERSION]) != TYPE_STRING:
+		return {"ok": false, "code": -32602, "message": "Invalid params: modern protocolVersion metadata must be a string"}
 	if not meta.has(META_CLIENT_CAPABILITIES) or typeof(meta[META_CLIENT_CAPABILITIES]) != TYPE_DICTIONARY:
 		return {"ok": false, "code": -32602, "message": "Invalid params: modern clientCapabilities metadata is required"}
 	if meta.has(META_CLIENT_INFO):
@@ -137,7 +146,9 @@ func _handle(req: Dictionary, protocol := {"modern": false}):
 				"cacheScope": "private",
 				"_meta": _server_metadata(),
 			})
-		if method in ["initialize", "notifications/initialized"]:
+		# Handshake and ping were removed in 2026-07-28; they never reach the
+		# legacy dispatch path from a modern request.
+		if method in ["initialize", "notifications/initialized", "ping"]:
 			return JsonRpc.error(id, -32601, "Method not found: " + method)
 	match method:
 		"initialize":

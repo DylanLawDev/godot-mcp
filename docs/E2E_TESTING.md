@@ -342,3 +342,6 @@ checks the explicit no-renderer error instead.
 The runtime fixture now injects a key press/release and mouse drag, checking
 its runtime log for actual callbacks and a held left-button mask during motion.
 An invalid batch must execute nothing, and delayed input while paused must fail.
+
+The rendered integration resizes to 800×600 then 480×360 and verifies actual
+window dimensions before capturing. Its headless variant rejects resizing.

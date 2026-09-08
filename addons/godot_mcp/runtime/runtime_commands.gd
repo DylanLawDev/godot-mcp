@@ -4,6 +4,7 @@ const FrameCapture = preload("res://addons/godot_mcp/runtime/frame_capture.gd")
 const Sessions = preload("res://addons/godot_mcp/runtime/session_manager.gd")
 const InputSequence = preload("res://addons/godot_mcp/runtime/input_sequence.gd")
 var input_sequence
+var _resize_task
 var bridge: Node
 
 func _init(owner: Node) -> void:
@@ -11,6 +12,7 @@ func _init(owner: Node) -> void:
 	input_sequence = InputSequence.new(owner)
 
 func register_handlers() -> void:
+	bridge.handlers["resize_game_window"] = Callable(self, "resize_game_window")
 	bridge.handlers["send_input"] = Callable(input_sequence, "send")
 	bridge.handlers["capture_game_frame"] = Callable(self, "capture_game_frame")
 
@@ -55,3 +57,35 @@ func _capture_after_draw(task, downscale: int, format: String) -> void:
 
 func cleanup() -> void:
 	input_sequence.release_all()
+
+func resize_game_window(args: Dictionary):
+	var task := Deferred.new()
+	if _resize_task != null and not _resize_task.done:
+		task.resolve({"ok": false, "error": "Another window resize is pending"})
+		return task
+	if DisplayServer.get_name() == "headless":
+		task.resolve({"ok": false, "error": "Cannot resize a headless game window"})
+		return task
+	var viewport: Window = bridge.get_tree().root
+	if viewport.mode != Window.MODE_WINDOWED or viewport.is_embedded():
+		task.resolve({"ok": false, "error": "Resizing requires a standalone windowed session"})
+		return task
+	var requested := Vector2i(int(args.get("width", 0)), int(args.get("height", 0)))
+	if requested.x < 64 or requested.y < 64 or requested.x > 8192 or requested.y > 8192:
+		task.resolve({"ok": false, "error": "Window dimensions must be 64–8192 pixels"})
+		return task
+	_resize_task = task
+	viewport.size = requested
+	_observe_resize(task, requested)
+	return task
+
+func _observe_resize(task, requested: Vector2i) -> void:
+	await bridge.get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if _resize_task == task:
+		_resize_task = null
+	if task.done or not is_instance_valid(bridge) or not bridge.is_inside_tree():
+		return
+	var viewport: Window = bridge.get_tree().root
+	var visible := viewport.get_visible_rect().size
+	task.resolve({"ok": true, "value": {"session_id": bridge.session_id, "requested_size": [requested.x, requested.y], "window_size": [viewport.size.x, viewport.size.y], "viewport_size": [visible.x, visible.y], "content_scale_size": [viewport.content_scale_size.x, viewport.content_scale_size.y]}})

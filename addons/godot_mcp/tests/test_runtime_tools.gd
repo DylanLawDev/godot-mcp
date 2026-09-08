@@ -65,3 +65,8 @@ func test_capture_validates_frame_options() -> void:
 		assert_false(tools.capture_game_frame(args).ok)
 	var commands = preload("res://addons/godot_mcp/runtime/runtime_commands.gd").new(null)
 	assert_false(commands.capture_game_frame({}).value.ok)
+
+func test_resize_requires_bounded_integer_dimensions() -> void:
+	var tools := Tools.new(FakeManager.new())
+	for args in [{}, {"session_id": "a"}, {"session_id": "a", "width": 0, "height": 100}, {"session_id": "a", "width": 640.5, "height": 480}, {"session_id": "a", "width": 640, "height": "480"}, {"session_id": "a", "width": 640, "height": 9000}]:
+		assert_false(tools.resize_game_window(args).ok)

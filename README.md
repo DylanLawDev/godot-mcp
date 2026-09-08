@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **45 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **46 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -308,6 +308,11 @@ Explicit presses remain held until release; stop/disconnect cancels injected hol
 Timed input is unavailable while paused. Applied event count excludes synthesized
 hold releases. Coordinates are original viewport pixels, before capture downscaling.
 
+`resize_game_window({session_id,width,height})` requests a standalone game window
+size (64–8192 pixels per axis) and returns actual window_size, viewport_size and
+content_scale_size after a rendered frame. For example, `{"session_id":"<id>",
+"width":800,"height":600}`. OS constraints may clamp the request. Headless,
+fullscreen and embedded modes are rejected; project stretch settings are preserved.
 Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
 to one complete physics step. Both sides reserve a conservative deadline using
 Godot's minimum tick rate, including games that change the rate at runtime.

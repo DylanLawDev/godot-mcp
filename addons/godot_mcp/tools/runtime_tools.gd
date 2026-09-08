@@ -104,7 +104,20 @@ func send_input(args: Dictionary) -> Variant:
 	var timeout := InputSequence.timeout_for_events(events, tick_rate) + 5.0
 	return runtime.request(id, "send_input", {"events": events}, timeout)
 
+func resize_game_window(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not integer(args.get("width"), 64, 8192) or not integer(args.get("height"), 64, 8192):
+		return failure("width and height must be integers from 64 to 8192")
+	return runtime.request(id, "resize_game_window", {"width": args.width, "height": args.height})
+
 func register_tools(reg) -> void:
+	reg.register("resize_game_window", "Resize a standalone rendered game window and report actual window/viewport/content-scale dimensions. Does not change fullscreen mode or project stretch settings.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "width": {"type": "integer", "minimum": 64, "maximum": 8192}, "height": {"type": "integer", "minimum": 64, "maximum": 8192}}, "required": ["session_id", "width", "height"]}, Callable(self, "resize_game_window"))
 	reg.register("send_input", "Inject an ordered batch of action/key/mouse_button/mouse_motion events into the game. Coordinates use original root viewport pixels. Optional wait_frames or hold_frames schedule physics-frame delays.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "events": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["action", "key", "mouse_button", "mouse_motion"]}, "action": {"type": "string"}, "key": {"type": "string"}, "button": {"type": "string"}, "pressed": {"type": "boolean"}, "position": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, "relative": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, "modifiers": {"type": "array", "items": {"type": "string"}}, "strength": {"type": "number", "minimum": 0, "maximum": 1}, "wait_frames": {"type": "integer", "minimum": 0, "maximum": 600}, "hold_frames": {"type": "integer", "minimum": 0, "maximum": 600}}, "required": ["kind"]}}}, "required": ["session_id", "events"]}, Callable(self, "send_input"))
 	reg.register("capture_game_frame", "Capture the next rendered game viewport as PNG file or base64. Headless sessions cannot render. Coordinates refer to source viewport_size.",

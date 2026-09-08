@@ -22,7 +22,6 @@ var _error_cursor := 0
 var _deadline := 0
 var _tasks: Dictionary = {}
 var _quitting := false
-var _quit_deadline := 0
 
 func configure(args: Dictionary, capture) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -40,7 +39,7 @@ func _process(_delta: float) -> void:
 	_last_process_usec = now
 	_peer.poll()
 	if _quitting:
-		if _peer.pending_bytes() == 0 or Time.get_ticks_msec() >= _quit_deadline:
+		if _peer.pending_bytes() == 0 or _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			get_tree().quit()
 		return
 	if _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
@@ -101,9 +100,9 @@ func _receive(message: Dictionary) -> void:
 		return
 	if command == "quit":
 		_cleanup()
-		_reply(id, {"ok": true, "value": {"stopping": true}})
+		if _reply(id, {"ok": true, "value": {"stopping": true}}):
+			_peer.prioritize_last_frame()
 		_quitting = true
-		_quit_deadline = Time.get_ticks_msec() + 1000
 	elif not handlers.has(command):
 		_reply(id, {"ok": false, "error": "Unknown runtime command: " + command})
 	elif _tasks.size() >= 64:
@@ -117,9 +116,15 @@ func _receive(message: Dictionary) -> void:
 		else:
 			_reply(id, result)
 
-func _reply(id: String, result: Variant) -> void:
-	if not _send({"kind": "reply", "request_id": id, "result": result}):
-		_send({"kind": "reply", "request_id": id, "result": {"ok": false, "error": "Runtime response too large; reduce requested data"}})
+func _reply(id: String, result: Variant) -> bool:
+	if _send({"kind": "reply", "request_id": id, "result": result}):
+		return true
+	if _send({"kind": "reply", "request_id": id, "result": {"ok": false, "error": "Runtime response too large or write queue full; reduce requested data"}}):
+		return true
+	# Never silently drop a completed request when even its error cannot queue.
+	# Disconnect makes every outstanding manager request fail immediately.
+	_peer.disconnect_from_host()
+	return false
 
 func _send(message: Dictionary) -> bool:
 	message["session_id"] = session_id

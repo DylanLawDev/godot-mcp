@@ -140,4 +140,11 @@ static func disable_mcp(path: String) -> Error:
 		if plugin != "res://addons/godot_mcp/plugin.cfg":
 			kept.append(plugin)
 	config.set_value("editor_plugins", "enabled", kept)
+	# This copied configuration is intentionally edited; a read-only source
+	# config must not prevent disabling the duplicate MCP plugin in the copy.
+	if OS.get_name() != "Windows":
+		var permissions := FileAccess.get_unix_permissions(path)
+		var writable := FileAccess.set_unix_permissions(path, permissions | 0x80)
+		if writable != OK:
+			return writable
 	return config.save(path)

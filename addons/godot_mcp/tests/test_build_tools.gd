@@ -49,6 +49,8 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 		assert_eq(FileAccess.get_unix_permissions(target.path_join("project.godot")), 0x1ed)
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".godot")))
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".git")))
+	if OS.get_name() != "Windows":
+		FileAccess.set_unix_permissions(target.path_join("project.godot"), 0x124)
 	assert_eq(Snapshot.disable_mcp(target.path_join("project.godot")), OK)
 	config.load(target.path_join("project.godot"))
 	assert_eq(config.get_value("autoload", "Fixture"), "*res://fixture.gd")
@@ -71,3 +73,9 @@ func test_validation_logger_counts_stderr_but_not_warnings() -> void:
 	assert_eq(logger.failures, 0)
 	logger._log_message("stderr failure", true)
 	assert_eq(logger.failures, 1)
+
+func test_nested_report_text_is_sanitized() -> void:
+	var sanitizer = preload("res://addons/godot_mcp/runtime/log_sanitizer.gd")
+	var result: Dictionary = sanitizer.clean_value({"diagnostics": [{"text": String.chr(27) + "[31mred", "backtraces": [{"file": "file" + String.chr(7)}]}]})
+	assert_eq(result.diagnostics[0].text, "red")
+	assert_eq(result.diagnostics[0].backtraces[0].file, "file")

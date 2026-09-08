@@ -1,4 +1,5 @@
 extends SceneTree
+const LogSanitizer = preload("res://addons/godot_mcp/runtime/log_sanitizer.gd")
 const Capture = preload("res://addons/godot_mcp/tools/output_capture.gd")
 class ValidationLogger extends Capture:
 	var failures := 0
@@ -49,6 +50,6 @@ func _finish(completed: bool) -> void:
 	if file == null:
 		quit(2)
 		return
-	file.store_string(JSON.stringify({"completed": completed, "passed": passed, "error_count": logger.failures, "diagnostics": logger.entries()}))
+	file.store_string(JSON.stringify({"completed": completed, "passed": passed, "error_count": logger.failures, "diagnostics": LogSanitizer.clean_value(logger.entries())}))
 	file.close()
 	quit(0 if passed else 1)

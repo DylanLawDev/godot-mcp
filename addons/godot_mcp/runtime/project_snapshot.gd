@@ -48,10 +48,15 @@ func poll() -> void:
 				_fail("Could not write project snapshot")
 				return
 			if _input.get_position() >= _input.get_length():
+				var from_path := _input.get_path_absolute()
+				var to_path := _output.get_path_absolute()
 				_input.close()
 				_output.close()
 				_input = null
 				_output = null
+				if OS.get_name() != "Windows" and FileAccess.set_unix_permissions(to_path, FileAccess.get_unix_permissions(from_path)) != OK:
+					_fail("Could not preserve snapshot file permissions")
+					return
 				files_copied += 1
 			continue
 		if _directory != null:

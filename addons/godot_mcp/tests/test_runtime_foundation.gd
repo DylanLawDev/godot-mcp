@@ -297,3 +297,20 @@ func test_dropped_peer_cannot_restore_connection_and_payload_progress_is_live() 
 	manager._receive(item, {"session_id": id, "kind": "heartbeat"})
 	assert_false(manager.sessions[id].bridge_connected)
 	manager.shutdown()
+
+func test_termination_attempt_resets_stale_kill_and_handles_exit_race() -> void:
+	var jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd").new()
+	jobs.records["id"] = {"kill_sent": true, "termination_reason": "startup_timeout", "sequence": 0, "output": []}
+	jobs._handles["id"] = {"pid": 7, "stdio": null, "stderr": null}
+	jobs.process_is_running = func(_pid): return false
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	var checks := {"count": 0}
+	jobs.process_is_running = func(_pid):
+		checks.count += 1
+		return checks.count == 1
+	jobs.process_kill = func(_pid): return ERR_DOES_NOT_EXIST
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	assert_eq(jobs.records.id.termination_reason, "startup_timeout")
+	jobs.shutdown()

@@ -16,3 +16,11 @@ func test_dispatch_tracks_and_releases_only_injected_holds() -> void:
 	assert_false(Input.is_key_pressed(KEY_A))
 	assert_true(Input.is_action_pressed("ui_left"))
 	Input.action_release("ui_left")
+
+func test_key_alias_release_removes_canonical_hold() -> void:
+	var sequence := Sequence.new(null)
+	sequence._dispatch({"kind": "key", "key": "A", "pressed": true})
+	sequence._dispatch({"kind": "key", "key": " KEY_A ", "pressed": false})
+	assert_eq(sequence._held.size(), 0)
+	assert_false(Input.is_key_pressed(KEY_A))
+	sequence.release_all()

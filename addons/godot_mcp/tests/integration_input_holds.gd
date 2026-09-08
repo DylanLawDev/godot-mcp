@@ -22,6 +22,15 @@ func _main() -> void:
 			await process_frame
 		if not task.value.ok or counter.held_steps != count:
 			failures.append({"requested": count, "observed": counter.held_steps, "result": task.value})
+	var pending = sequence.send({"events": [{"kind": "key", "key": "A", "hold_frames": 600}]})
+	await physics_frame
+	paused = true
+	pending.cancel("test cancellation while paused")
+	var immediate = sequence.send({"events": [{"kind": "key", "key": "KEY_A", "pressed": false}]})
+	if not immediate.done or not immediate.value.ok:
+		failures.append("cancelled sequence blocked immediate recovery input")
+	paused = false
+	await physics_frame
 	sequence.release_all()
 	counter.queue_free()
 	print("INPUT HOLD INTEGRATION: ", failures)

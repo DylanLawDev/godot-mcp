@@ -81,3 +81,8 @@ func test_truncated_output_retains_terminal_failure() -> void:
 	assert_true(result[0].truncated)
 	assert_true(result[0].text.ends_with("FINAL_FAILURE"))
 	assert_eq(result[0].text.length(), 512 * 1024)
+
+func test_template_version_directories_match_godot_release_names() -> void:
+	assert_eq(Export.template_version_folder({"major": 4, "minor": 6, "patch": 0, "status": "stable"}), "4.6.stable")
+	assert_eq(Export.template_version_folder({"major": 4, "minor": 6, "patch": 1, "status": "stable"}), "4.6.1.stable")
+	assert_eq(Export.template_version_folder({"major": 4, "minor": 7, "patch": 0, "status": "rc1"}), "4.7.rc1")

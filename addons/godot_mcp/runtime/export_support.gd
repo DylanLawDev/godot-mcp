@@ -23,7 +23,7 @@ static func prepare(preset: String, mode: String, source: String) -> Dictionary:
 		template = template.replace("res://", source + "/") if template.begins_with("res://") else (template if template.is_absolute_path() else source.path_join(template))
 	else:
 		var version := Engine.get_version_info()
-		var folder := "%s.%s.%s.%s" % [version.major, version.minor, version.patch, version.status]
+		var folder := template_version_folder(version)
 		var name := "macos.zip"
 		if platform == "Linux":
 			name = "linux_%s.%s" % [mode, architecture]
@@ -79,3 +79,9 @@ static func manifest(directory: String, expected: String) -> Dictionary:
 				artifacts.append({"path": child, "size_bytes": artifact.get_length(), "kind": "package" if child == expected else "sidecar"})
 			name = dir.get_next()
 	return {"ok": true, "value": artifacts}
+
+static func template_version_folder(version: Dictionary) -> String:
+	var folder := "%s.%s" % [version.major, version.minor]
+	if int(version.patch) != 0:
+		folder += ".%s" % version.patch
+	return folder + "." + str(version.status)

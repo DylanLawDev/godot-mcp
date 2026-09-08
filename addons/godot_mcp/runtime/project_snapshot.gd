@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
 # Incremental saved-file copy/removal. No live import cache is touched.
-const SKIP_DIRS := [".git", ".godot", "build", "builds", "dist"]
+const SKIP_DIRS := [".git", ".godot"]
+const ROOT_OUTPUT_DIRS := ["build", "builds", "dist"]
 var source := ""
 var target := ""
 var done := false
@@ -72,7 +73,7 @@ func poll() -> void:
 			var managed := ProjectSettings.globalize_path("user://godot_mcp").trim_suffix("/")
 			if not _removing and managed.begins_with(source + "/") and absolute == managed:
 				continue
-			if not _removing and (_directory.current_is_dir() and name in SKIP_DIRS or absolute in _excluded):
+			if not _removing and (_directory.current_is_dir() and (name in SKIP_DIRS or (_relative == "" and name in ROOT_OUTPUT_DIRS)) or absolute in _excluded):
 				continue
 			if _directory.is_link(name):
 				if _removing:

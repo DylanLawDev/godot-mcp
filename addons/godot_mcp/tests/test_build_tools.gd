@@ -40,6 +40,10 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 	marker.close()
 	if OS.get_name() != "Windows":
 		FileAccess.set_unix_permissions(source.path_join("project.godot"), 0x1ed)
+	DirAccess.make_dir_recursive_absolute(source.path_join("assets/build"))
+	var nested := FileAccess.open(source.path_join("assets/build/resource.txt"), FileAccess.WRITE)
+	nested.store_string("referenced nested resource")
+	nested.close()
 	var hash := FileAccess.get_sha256(source.path_join("project.godot"))
 	var copy := Snapshot.new(source, target)
 	while not copy.done:
@@ -47,6 +51,7 @@ func test_snapshot_preserves_settings_and_excludes_cache() -> void:
 	assert_eq(copy.error, "")
 	if OS.get_name() != "Windows":
 		assert_eq(FileAccess.get_unix_permissions(target.path_join("project.godot")), 0x1ed)
+	assert_true(FileAccess.file_exists(target.path_join("assets/build/resource.txt")))
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".godot")))
 	assert_false(DirAccess.dir_exists_absolute(target.path_join(".git")))
 	if OS.get_name() != "Windows":

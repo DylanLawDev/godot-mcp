@@ -386,3 +386,6 @@ copy in the job artifact directory. One scenario/validation/export job runs at a
 
 Performance sample data is capped at 4 MiB; oversized requests finish early with
 `truncated:true`, preserving collected samples instead of failing the bridge limit.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

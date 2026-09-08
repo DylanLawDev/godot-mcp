@@ -3,6 +3,7 @@ extends RefCounted
 # Injectable child-process seam. A handle belongs to one job; callers never pass PIDs.
 const OUTPUT_CAP := 1000
 var process_is_running := Callable(OS, "is_process_running")
+var process_kill := Callable(OS, "kill")
 var process_exit_code := Callable(OS, "get_process_exit_code")
 var records: Dictionary = {}
 var _handles: Dictionary = {}
@@ -79,16 +80,18 @@ static func decode_utf8(data: PackedByteArray) -> Dictionary:
 	return {"text": data.slice(0, end).get_string_from_utf8(), "tail": data.slice(end)}
 
 func terminate(id: String, reason: String = "stopped") -> bool:
+	if records.has(id):
+		records[id]["kill_sent"] = false
 	if not _handles.has(id):
 		return records.has(id)
 	var pid: int = _handles[id].pid
 	if not process_is_running.call(pid):
 		return true
-	var sent := OS.kill(pid) == OK
+	var sent: bool = process_kill.call(pid) == OK
 	if sent:
 		records[id].termination_reason = reason
 		records[id]["kill_sent"] = true
-	return sent
+	return sent or not process_is_running.call(pid)
 
 func active(id: String) -> bool:
 	return _handles.has(id)

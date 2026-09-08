@@ -84,3 +84,17 @@ func test_nested_report_text_is_sanitized() -> void:
 	var result: Dictionary = sanitizer.clean_value({"diagnostics": [{"text": String.chr(27) + "[31mred", "backtraces": [{"file": "file" + String.chr(7)}]}]})
 	assert_eq(result.diagnostics[0].text, "red")
 	assert_eq(result.diagnostics[0].backtraces[0].file, "file")
+
+func test_logger_freeze_has_consistent_count_and_entries() -> void:
+	var logger = preload("res://addons/godot_mcp/runtime/validation_bootstrap.gd").ValidationLogger.new()
+	logger._log_message("first", true)
+	var worker := Thread.new()
+	worker.start(func():
+		for _i in 500:
+			logger._log_message("thread error", true)
+	)
+	var frozen: Dictionary = logger.freeze()
+	worker.wait_to_finish()
+	logger._log_message("late", true)
+	assert_eq(frozen.error_count, frozen.diagnostics.size())
+	assert_eq(logger.freeze(), frozen)

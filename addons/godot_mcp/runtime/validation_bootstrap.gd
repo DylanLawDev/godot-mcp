@@ -3,18 +3,30 @@ const LogSanitizer = preload("res://addons/godot_mcp/runtime/log_sanitizer.gd")
 const Capture = preload("res://addons/godot_mcp/tools/output_capture.gd")
 class ValidationLogger extends Capture:
 	var failures := 0
+	var _frozen := false
 	func _log_message(message, error) -> void:
-		super._log_message(message, error)
-		if error:
-			_mutex.lock()
-			failures += 1
-			_mutex.unlock()
-	func _log_error(function, file, line, code, rationale, notify, error_type, backtraces) -> void:
-		super._log_error(function, file, line, code, rationale, notify, error_type, backtraces)
 		_mutex.lock()
-		if error_type != Logger.ERROR_TYPE_WARNING:
-			failures += 1
+		if not _frozen:
+			_append({"type": "log", "text": message, "error": error})
+			if error:
+				failures += 1
+			_evict()
 		_mutex.unlock()
+	func _log_error(function, file, line, code, rationale, _notify, error_type, backtraces) -> void:
+		_mutex.lock()
+		if not _frozen:
+			_append({"type": "error", "function": function, "file": file, "line": line, "message": code, "rationale": rationale, "error_type": error_type, "backtraces": _encode_backtraces(backtraces)})
+			if error_type != Logger.ERROR_TYPE_WARNING:
+				failures += 1
+			_evict()
+		_mutex.unlock()
+	func freeze() -> Dictionary:
+		_mutex.lock()
+		_frozen = true
+		var result := {"error_count": failures, "diagnostics": _entries.duplicate(true)}
+		_mutex.unlock()
+		return result
+
 var logger
 var _out := ""
 var _deadline := 0
@@ -51,11 +63,13 @@ func _finish(completed: bool) -> void:
 		if is_instance_valid(child) and child.get_parent() == root:
 			child.free()
 	await process_frame
-	var passed: bool = completed and logger.failures == 0
+	OS.remove_logger(logger)
+	var frozen: Dictionary = logger.freeze()
+	var passed: bool = completed and frozen.error_count == 0
 	var file := FileAccess.open(_out, FileAccess.WRITE)
 	if file == null:
 		quit(2)
 		return
-	file.store_string(JSON.stringify({"completed": completed, "passed": passed, "error_count": logger.failures, "diagnostics": LogSanitizer.clean_value(logger.entries())}))
+	file.store_string(JSON.stringify({"completed": completed, "passed": passed, "error_count": frozen.error_count, "diagnostics": LogSanitizer.clean_value(frozen.diagnostics)}))
 	file.close()
 	quit(0 if passed else 1)

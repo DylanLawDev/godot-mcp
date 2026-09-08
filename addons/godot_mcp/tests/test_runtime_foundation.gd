@@ -236,10 +236,28 @@ func test_stop_during_startup_uses_bridge_when_ready() -> void:
 	assert_false(manager._stops[id].quit_sent)
 	var peer := FakePeer.new()
 	manager.sessions[id]._peer = peer
+	manager._peers.append({"id": id, "peer": peer})
 	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "ready"})
 	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "heartbeat"})
 	manager._poll_stops()
 	assert_true(manager._stops[id].quit_sent)
 	assert_eq(manager.sessions[id].state, "stopping")
 	assert_false(manager._stops[id].forced)
+	manager.shutdown()
+
+class RetryPeer extends FakePeer:
+	var fail_writes := true
+	func put_data(_bytes): return ERR_CONNECTION_ERROR if fail_writes else OK
+func test_failed_quit_send_can_retry_during_grace() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var peer := RetryPeer.new()
+	manager.sessions[id]._peer = peer
+	manager.sessions[id].bridge_connected = true
+	manager._peers.append({"id": id, "peer": peer})
+	manager.stop_session(id, 10)
+	assert_false(manager._stops[id].quit_sent)
+	peer.fail_writes = false
+	manager._poll_stops()
+	assert_true(manager._stops[id].quit_sent)
 	manager.shutdown()

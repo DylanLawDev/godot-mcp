@@ -345,3 +345,6 @@ An invalid batch must execute nothing, and delayed input while paused must fail.
 
 The rendered integration resizes to 800×600 then 480×360 and verifies actual
 window dimensions before capturing. Its headless variant rejects resizing.
+
+Runtime-tree integration verifies a `RuntimeOnly` node spawned in `_ready`
+appears through `get_runtime_tree` even though it does not exist in the scene file.

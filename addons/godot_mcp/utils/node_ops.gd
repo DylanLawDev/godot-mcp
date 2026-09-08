@@ -105,3 +105,25 @@ static func serialize_tree(node: Node, root: Node) -> Dictionary:
 	for c in node.get_children():
 		out["children"].append(serialize_tree(c, root))
 	return out
+
+# Bounded variant for runtime responses. Editor callers retain their full-tree API.
+static func serialize_tree_bounded(node: Node, root: Node, max_depth: int, max_nodes: int) -> Dictionary:
+	var budget := {"remaining": max_nodes, "truncated": false}
+	var tree := _bounded_tree(node, root, max_depth, budget)
+	return {"tree": tree, "truncated": budget.truncated}
+
+static func _bounded_tree(node: Node, root: Node, depth: int, budget: Dictionary) -> Dictionary:
+	budget.remaining -= 1
+	var out := {"name": str(node.name), "type": node.get_class(), "path": str(root.get_path_to(node)), "script": null, "children": []}
+	var script = node.get_script()
+	if script != null and script.resource_path != "":
+		out.script = script.resource_path
+	if depth == 0:
+		budget.truncated = budget.truncated or node.get_child_count() > 0
+		return out
+	for child in node.get_children():
+		if budget.remaining <= 0:
+			budget.truncated = true
+			break
+		out.children.append(_bounded_tree(child, root, depth - 1, budget))
+	return out

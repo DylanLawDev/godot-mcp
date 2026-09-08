@@ -28,6 +28,12 @@ func _main() -> void:
 	if status.state != "running":
 		failures.append("did not become ready")
 	else:
+		var tree = tools.get_runtime_tree({"session_id": id})
+		while not tree.done:
+			manager.poll()
+			await process_frame
+		if not tree.value.ok or not JSON.stringify(tree.value).contains("RuntimeOnly"):
+			failures.append("live tree did not include runtime-only spawned node")
 		var unknown = manager.request(id, "not_a_command", {})
 		while not unknown.done:
 			manager.poll()

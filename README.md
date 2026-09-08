@@ -58,7 +58,7 @@ everything it can do.
 
 ## What you can do
 
-Godot MCP exposes **46 tools** plus a set of read-only resources. Here's the full
+Godot MCP exposes **47 tools** plus a set of read-only resources. Here's the full
 catalogue, grouped by what you'll use them for.
 
 ### 📄 Files & scripts
@@ -243,9 +243,9 @@ the plugin only needs basic HTTP/1.1 parsing and JSON-RPC.
   ports.
 - **Loopback only, no auth in v1.** The server binds to `127.0.0.1`. An optional
   bearer token is planned. Don't expose the port to untrusted networks.
-- **Coming later:** in-game runtime tools (live screenshot, input injection, and
-  node queries against a *running* game) need a second live connection from the
-  game and are planned for v2.
+- **Managed runtime:** launch a game session with `run_project`, then use its
+  session ID for screenshots, input, window resizing and live node queries.
+  These use a separate authenticated game connection; headless games do not render.
 
 ---
 
@@ -313,6 +313,12 @@ size (64–8192 pixels per axis) and returns actual window_size, viewport_size a
 content_scale_size after a rendered frame. For example, `{"session_id":"<id>",
 "width":800,"height":600}`. OS constraints may clamp the request. Headless,
 fullscreen and embedded modes are rejected; project stretch settings are preserved.
+
+`get_runtime_tree({session_id,path=".",max_depth=8,max_nodes=1000})` inspects the
+live scene, including runtime-spawned children. It returns tree, frame and an
+explicit truncated flag. A node includes name/type/path/script/children; paths
+are relative to the current game scene. Example: `{"session_id":"<id>",
+"max_depth":2}`. This does not use the edited scene or expose bridge internals.
 Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
 to one complete physics step. Both sides reserve a conservative deadline using
 Godot's minimum tick rate, including games that change the rate at runtime.

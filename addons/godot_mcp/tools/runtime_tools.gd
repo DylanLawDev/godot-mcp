@@ -115,7 +115,22 @@ func resize_game_window(args: Dictionary) -> Variant:
 		return failure("width and height must be integers from 64 to 8192")
 	return runtime.request(id, "resize_game_window", {"width": args.width, "height": args.height})
 
+func get_runtime_tree(args: Dictionary) -> Variant:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id")
+	if not id is String or id == "":
+		return failure("session_id must be a nonempty string")
+	if not args.get("path", ".") is String:
+		return failure("path must be a string relative to the current scene")
+	if not integer(args.get("max_depth", 8), 0, 64) or not integer(args.get("max_nodes", 1000), 1, 10000):
+		return failure("max_depth must be 0–64 and max_nodes must be 1–10000")
+	return runtime.request(id, "get_runtime_tree", {"path": args.get("path", "."), "max_depth": args.get("max_depth", 8), "max_nodes": args.get("max_nodes", 1000)})
+
 func register_tools(reg) -> void:
+	reg.register("get_runtime_tree", "Inspect the live current-scene hierarchy, including spawned nodes. Paths are relative to the running scene, not the editor. Results report truncation.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}, "path": {"type": "string", "default": "."}, "max_depth": {"type": "integer", "minimum": 0, "maximum": 64, "default": 8}, "max_nodes": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}}, "required": ["session_id"]}, Callable(self, "get_runtime_tree"))
 	reg.register("resize_game_window", "Resize a standalone rendered game window and report actual window/viewport/content-scale dimensions. Does not change fullscreen mode or project stretch settings.",
 		{"type": "object", "properties": {"session_id": {"type": "string"}, "width": {"type": "integer", "minimum": 64, "maximum": 8192}, "height": {"type": "integer", "minimum": 64, "maximum": 8192}}, "required": ["session_id", "width", "height"]}, Callable(self, "resize_game_window"))
 	reg.register("send_input", "Inject an ordered batch of action/key/mouse_button/mouse_motion events into the game. Coordinates use original root viewport pixels. Optional wait_frames or hold_frames schedule physics-frame delays.",

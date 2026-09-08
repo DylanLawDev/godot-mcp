@@ -33,15 +33,18 @@ func _main() -> void:
 			await process_frame
 		if unknown.value.ok:
 			failures.append("unknown command succeeded")
-		var stop = manager.request(id, "quit", {})
+		var stop = tools.stop_project({"session_id": id})
 		deadline = Time.get_ticks_msec() + 5000
 		while manager.active_id != "" and Time.get_ticks_msec() < deadline:
 			manager.poll()
 			await process_frame
 		if manager.active_id != "":
 			failures.append("quit did not stop child")
-		if not stop.done or not stop.value.ok:
-			failures.append("quit reply was lost before disconnect")
+		if not stop.done or not stop.value.ok or stop.value.value.forced:
+			failures.append("graceful stop result was not successful")
+		var repeated = tools.stop_project({"session_id": id})
+		if not repeated.value.value.already_stopped:
+			failures.append("repeat stop was not idempotent")
 	status = tools.get_run_status({"session_id": id}).value
 	print("EXIT: ", JSON.stringify(status))
 	var output := JSON.stringify(status.diagnostics)

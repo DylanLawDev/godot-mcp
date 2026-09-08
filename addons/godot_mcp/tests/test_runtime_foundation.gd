@@ -92,6 +92,8 @@ class FakeJobs:
 	func active(id): return running.has(id)
 	func terminate(id, reason = "stopped"):
 		if records.has(id):
+			if running.has(id):
+				records[id]["kill_sent"] = true
 			running.erase(id)
 			records[id].state = "failed"
 			records[id].termination_reason = reason
@@ -146,6 +148,26 @@ func test_handshake_authentication_stale_session_and_disconnect() -> void:
 	assert_false(manager.sessions.a.bridge_connected)
 	manager.shutdown()
 
+func test_stop_owned_session_forced_and_idempotent() -> void:
+	var jobs := FakeJobs.new()
+	var manager := Sessions.new(jobs)
+	var result := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = result.value.session_id
+	var stop = manager.stop_session(id, 0)
+	assert_false(stop.done)
+	assert_eq(manager.summary(id).state, "stopping")
+	manager.poll()
+	manager.poll()
+	assert_true(stop.done)
+	assert_true(stop.value.ok)
+	assert_true(stop.value.value.forced)
+	assert_true(manager.stop_session(id, 0).value.value.already_stopped)
+	assert_false(manager.stop_session("unknown", 0).value.ok)
+	var newer := manager.launch("res://examples/scenes/main.tscn", true)
+	manager.stop_session(id, 0)
+	assert_true(jobs.active(newer.value.session_id))
+	manager.shutdown()
+
 func test_max_frame_followed_by_coalesced_heartbeat() -> void:
 	var frame := Wire.encode({"data": "x".repeat(Wire.MAX_BYTES - 11)})
 	assert_eq(frame.size(), Wire.MAX_BYTES + 4)
@@ -191,6 +213,75 @@ func test_exited_process_drains_more_than_one_poll_of_output() -> void:
 	DirAccess.remove_absolute(path)
 	jobs.shutdown()
 
+func test_cancelled_stop_response_keeps_forced_cleanup() -> void:
+	var jobs := FakeJobs.new()
+	var manager := Sessions.new(jobs)
+	var result := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = result.value.session_id
+	var stop = manager.stop_session(id, 10)
+	stop.cancel("HTTP client disconnected")
+	manager.poll()
+	assert_true(manager._stops.has(id))
+	assert_true(jobs.active(id))
+	manager._stops[id].deadline = Time.get_ticks_msec()
+	manager.poll()
+	manager.poll()
+	assert_false(jobs.active(id))
+	assert_eq(manager.active_id, "")
+	manager.shutdown()
+
+func test_stop_during_startup_uses_bridge_when_ready() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var launched := manager.launch("res://examples/scenes/main.tscn", true)
+	var id: String = launched.value.session_id
+	manager.stop_session(id, 10)
+	assert_false(manager._stops[id].quit_sent)
+	var peer := FakePeer.new()
+	manager.sessions[id]._peer = peer
+	manager._peers.append({"id": id, "peer": peer})
+	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "ready"})
+	manager._receive({"id": id, "peer": peer}, {"session_id": id, "kind": "heartbeat"})
+	manager._poll_stops()
+	assert_true(manager._stops[id].quit_sent)
+	assert_eq(manager.sessions[id].state, "stopping")
+	assert_false(manager._stops[id].forced)
+	manager.shutdown()
+
+class RetryPeer extends FakePeer:
+	var fail_writes := true
+	func put_data(_bytes): return ERR_CONNECTION_ERROR if fail_writes else OK
+func test_failed_quit_send_can_retry_during_grace() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var peer := RetryPeer.new()
+	manager.sessions[id]._peer = peer
+	manager.sessions[id].bridge_connected = true
+	manager._peers.append({"id": id, "peer": peer})
+	manager.stop_session(id, 10)
+	assert_false(manager._stops[id].quit_sent)
+	peer.fail_writes = false
+	manager._poll_stops()
+	assert_true(manager._stops[id].quit_sent)
+	manager.shutdown()
+
+class DrainingJobs extends FakeJobs:
+	func terminate(_id, _reason = "stopped"): return true
+func test_dead_child_with_buffered_logs_is_not_reported_forced() -> void:
+	var jobs := DrainingJobs.new()
+	var manager := Sessions.new(jobs)
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var stop = manager.stop_session(id, 0)
+	manager._poll_stops()
+	assert_false(manager._stops[id].forced)
+	jobs.running.erase(id)
+	jobs.records[id].state = "exited"
+	jobs.records[id]["exit_code"] = 0
+	manager.poll()
+	assert_true(stop.done)
+	assert_true(stop.value.ok)
+	assert_false(stop.value.value.forced)
+	manager.shutdown()
+
 func test_dropped_peer_cannot_restore_connection_and_payload_progress_is_live() -> void:
 	var manager := Sessions.new(FakeJobs.new())
 	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
@@ -206,3 +297,20 @@ func test_dropped_peer_cannot_restore_connection_and_payload_progress_is_live() 
 	manager._receive(item, {"session_id": id, "kind": "heartbeat"})
 	assert_false(manager.sessions[id].bridge_connected)
 	manager.shutdown()
+
+func test_termination_attempt_resets_stale_kill_and_handles_exit_race() -> void:
+	var jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd").new()
+	jobs.records["id"] = {"kill_sent": true, "termination_reason": "startup_timeout", "sequence": 0, "output": []}
+	jobs._handles["id"] = {"pid": 7, "stdio": null, "stderr": null}
+	jobs.process_is_running = func(_pid): return false
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	var checks := {"count": 0}
+	jobs.process_is_running = func(_pid):
+		checks.count += 1
+		return checks.count == 1
+	jobs.process_kill = func(_pid): return ERR_DOES_NOT_EXIST
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	assert_eq(jobs.records.id.termination_reason, "startup_timeout")
+	jobs.shutdown()

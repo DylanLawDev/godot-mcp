@@ -12,6 +12,7 @@ var background_id := ""
 var _listener := TCPServer.new()
 var _peers: Array = []
 var _pending: Dictionary = {}
+var _stops: Dictionary = {}
 var _next_request := 0
 var _history: Array[String] = []
 
@@ -144,6 +145,8 @@ func poll() -> void:
 			while _history.size() > 20:
 				sessions.erase(_history.pop_front())
 
+	_poll_stops()
+
 func _receive(item: Dictionary, message: Dictionary) -> void:
 	if item.get("_dropped", false):
 		return
@@ -164,13 +167,13 @@ func _receive(item: Dictionary, message: Dictionary) -> void:
 	var s: Dictionary = sessions[id]
 	match message.get("kind", ""):
 		"ready":
-			s.state = "running"
+			s.state = "stopping" if _stops.has(id) else "running"
 			s.bridge_connected = true
 			s.capabilities = message.get("capabilities", {})
 			s._heartbeat = Time.get_ticks_msec()
 		"heartbeat":
 			s._heartbeat = Time.get_ticks_msec()
-			s.bridge_connected = s.state == "running"
+			s.bridge_connected = s.state in ["running", "stopping"]
 		"reply":
 			var rid := str(message.get("request_id", ""))
 			if _pending.has(rid) and _pending[rid].session_id == id:
@@ -193,6 +196,8 @@ func _drop(item: Dictionary) -> void:
 	if id != "" and sessions.has(id):
 		sessions[id].bridge_connected = false
 		sessions[id]._peer = null
+		if _stops.has(id):
+			_stops[id].quit_sent = false
 		for rid in _pending.keys():
 			if _pending.has(rid) and _pending[rid].session_id == id:
 				_pending[rid].task.cancel("Runtime bridge disconnected")
@@ -202,6 +207,9 @@ func shutdown() -> void:
 		_drop(item)
 	_listener.stop()
 	jobs.shutdown()
+	for stop in _stops.values():
+		stop.task.cancel("Plugin disabled")
+	_stops.clear()
 
 # Shared background lane for scenario/validation/export tools. Arguments are
 # constructed by trusted tool code, never an arbitrary caller-provided command.
@@ -217,6 +225,56 @@ func launch_job(kind: String, arguments: PackedStringArray, timeout_seconds: flo
 		jobs.records[id]["deadline_msec"] = Time.get_ticks_msec() + int(timeout_seconds * 1000)
 		jobs.records[id]["artifact_dir"] = artifact_dir(id)
 	return result
+
+func stop_session(id: String, grace_seconds: float):
+	var task := Deferred.new(grace_seconds + 3.0)
+	if not sessions.has(id):
+		task.resolve({"ok": false, "error": "Unknown or expired session: " + id})
+		return task
+	if not jobs.active(id):
+		task.resolve({"ok": true, "value": {"session_id": id, "state": sessions[id].state, "already_stopped": true, "forced": false, "exit_code": sessions[id].exit_code}})
+		return task
+	if _stops.has(id):
+		task.resolve({"ok": false, "error": "A stop request is already pending for " + id})
+		return task
+	# Cancel prior commands before enqueueing graceful quit. Their callbacks run
+	# before the game's cleanup; no other session is affected.
+	for rid in _pending.keys():
+		if _pending.has(rid) and _pending[rid].session_id == id:
+			_pending[rid].task.cancel("Session is stopping")
+	var quit_sent := false
+	if sessions[id].bridge_connected:
+		quit_sent = _queue_quit(id, grace_seconds + 1.0)
+	sessions[id].state = "stopping"
+	sessions[id].termination_reason = "requested_stop"
+	_stops[id] = {"task": task, "deadline": Time.get_ticks_msec() + int(grace_seconds * 1000), "forced": false, "kill_checked": false, "quit_sent": quit_sent}
+	return task
+
+func _poll_stops() -> void:
+	for id in _stops.keys():
+		var stop: Dictionary = _stops[id]
+		if not jobs.active(id):
+			stop.task.resolve({"ok": true, "value": {"session_id": id, "state": sessions[id].state, "already_stopped": false, "forced": stop.forced, "exit_code": sessions[id].exit_code}})
+			_stops.erase(id)
+		elif not stop.kill_checked and Time.get_ticks_msec() >= stop.deadline:
+			stop.kill_checked = true
+			if not jobs.terminate(id, "forced_stop"):
+				stop.task.resolve({"ok": false, "error": "Could not terminate owned session " + id})
+				_stops.erase(id)
+			else:
+				stop.forced = jobs.records[id].get("kill_sent", false)
+		if _stops.has(id):
+			if not stop.kill_checked and not stop.quit_sent and sessions[id].bridge_connected:
+				stop.quit_sent = _queue_quit(id, maxf(1, (stop.deadline - Time.get_ticks_msec()) / 1000.0))
+			stop.task.poll()
+			# HTTP cancellation affects only delivery, not the owned stop action.
+			# Keep the grace/kill state machine alive independently of the task.
+			if stop.forced and Time.get_ticks_msec() >= stop.deadline + 3000:
+				_stops.erase(id)
+
+func _queue_quit(id: String, timeout_seconds: float) -> bool:
+	var task = request(id, "quit", {}, timeout_seconds)
+	return not task.done or task.value.get("ok", false) == true
 
 func _note_activity(item: Dictionary, bytes: int) -> void:
 	var id: String = item.get("id", "")

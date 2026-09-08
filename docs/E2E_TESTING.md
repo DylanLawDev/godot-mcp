@@ -329,3 +329,7 @@ active session rather than replacing it. Disabling the addon must stop its child
 Poll `get_run_status` for the launched ID until `running` and `bridge_connected`.
 Run a missing/broken scene and confirm startup failure diagnostics; the result
 must never be substituted with a newer session when an explicit old ID is used.
+
+Use `stop_project({session_id})` on the launched run and expect `forced:false`.
+Repeat it and expect `already_stopped:true`. Verify the editor and unrelated
+Godot windows remain open. The integration runner now uses this public stop tool.

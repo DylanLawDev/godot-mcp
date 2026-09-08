@@ -53,3 +53,8 @@ func test_status_idle_default_explicit_and_retained() -> void:
 	for args in [{"session_id": "unknown"}, {"session_id": ""}, {"session_id": 42}]:
 		assert_false(tools.get_run_status(args).ok)
 	sessions.shutdown()
+
+func test_stop_validates_explicit_session_and_grace() -> void:
+	var tools := Tools.new(FakeManager.new())
+	for args in [{}, {"session_id": ""}, {"session_id": 4}, {"session_id": "a", "grace_seconds": "2"}, {"session_id": "a", "grace_seconds": -1}, {"session_id": "a", "grace_seconds": 11}]:
+		assert_false(tools.stop_project(args).ok)

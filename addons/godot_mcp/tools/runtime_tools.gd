@@ -47,6 +47,22 @@ func run_project(args: Dictionary) -> Dictionary:
 		return failure("Resource is not a PackedScene: " + checked.path)
 	return runtime.launch(checked.path, headless, float(timeout_value))
 
+func get_run_status(args: Dictionary) -> Dictionary:
+	var runtime = manager()
+	if runtime == null:
+		return failure("Runtime manager requires an enabled editor plugin")
+	var id: Variant = args.get("session_id", runtime.active_id if runtime.active_id != "" else runtime.latest_id)
+	if not id is String or (args.has("session_id") and id == ""):
+		return failure("session_id must be a nonempty string")
+	if id == "":
+		return {"ok": true, "value": {"state": "idle", "session_id": null}}
+	var status: Dictionary = runtime.summary(id)
+	if status.is_empty():
+		return failure("Unknown or expired session: " + id)
+	return {"ok": true, "value": status}
+
 func register_tools(reg) -> void:
+	reg.register("get_run_status", "Read current or retained game status without blocking. An omitted session_id selects the active then most recent session.",
+		{"type": "object", "properties": {"session_id": {"type": "string"}}}, Callable(self, "get_run_status"))
 	reg.register("run_project", "Launch saved main scene or explicit scene in a managed standalone game. Returns a starting session ID; poll get_run_status for readiness.",
 		{"type": "object", "properties": {"scene": {"type": "string"}, "headless": {"type": "boolean", "default": false}, "startup_timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120, "default": 15}}}, Callable(self, "run_project"))

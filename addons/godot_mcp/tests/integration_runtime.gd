@@ -19,10 +19,10 @@ func _main() -> void:
 	if tools.run_project({"scene": "res://fixture.tscn", "headless": true}).ok:
 		failures.append("duplicate launch accepted")
 	var deadline := Time.get_ticks_msec() + 6000
-	while manager.summary(id).state == "starting" and Time.get_ticks_msec() < deadline:
+	while tools.get_run_status({"session_id": id}).value.state == "starting" and Time.get_ticks_msec() < deadline:
 		manager.poll()
 		await process_frame
-	var status: Dictionary = manager.summary(id)
+	var status: Dictionary = tools.get_run_status({"session_id": id}).value
 	print("READY: ", JSON.stringify(status))
 	if status.state != "running":
 		failures.append("did not become ready")
@@ -42,7 +42,7 @@ func _main() -> void:
 			failures.append("quit did not stop child")
 		if not stop.done or not stop.value.ok:
 			failures.append("quit reply was lost before disconnect")
-	status = manager.summary(id)
+	status = tools.get_run_status({"session_id": id}).value
 	print("EXIT: ", JSON.stringify(status))
 	var output := JSON.stringify(status.diagnostics)
 	if not output.contains("AUTOLOAD_OK"):

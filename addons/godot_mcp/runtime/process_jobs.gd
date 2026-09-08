@@ -88,10 +88,13 @@ func terminate(id: String, reason: String = "stopped") -> bool:
 	if not _handles.has(id):
 		return records.has(id)
 	var pid: int = _handles[id].pid
-	records[id].termination_reason = reason
 	if not process_is_running.call(pid):
 		return true
-	return OS.kill(pid) == OK
+	var sent := OS.kill(pid) == OK
+	if sent:
+		records[id].termination_reason = reason
+		records[id]["kill_sent"] = true
+	return sent
 
 func active(id: String) -> bool:
 	return _handles.has(id)

@@ -25,7 +25,7 @@ func _main() -> void:
 		failures.append(task.value)
 	else:
 		var value: Dictionary = task.value.value
-		if value.samples.size() < 2 or value.summary["custom/demo/jobs_ms"].mean != 1.25 or "missing" not in value.unavailable_monitors or value.summary.node_count.min < 1:
+		if value.samples.size() < 2 or value.summary["custom/demo/jobs_ms"].mean != 1.25 or "missing" not in value.unavailable_monitors or value.summary.node_count.min < 1 or value.summary.frame_time_ms.min <= 0:
 			failures.append(value)
 		for i in range(1, value.samples.size()):
 			if value.samples[i].elapsed_ms <= value.samples[i - 1].elapsed_ms:
@@ -41,7 +41,7 @@ func _main() -> void:
 		await process_frame
 	if not tree.value.ok:
 		failures.append("runtime blocked by sampling")
-	var stop = tools.stop_project({"session_id": id})
+	var stop = tools.stop_project({"session_id": id, "grace_seconds": 10})
 	while not stop.done:
 		manager.poll()
 		await process_frame

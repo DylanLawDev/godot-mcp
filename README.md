@@ -363,3 +363,6 @@ paused:true. The scheduler stays controlled for inspection; start a new session
 to resume ordinary play in this initial API. Commands have a 30-second game-side
 budget, yield between bounded work slices, and report completed ticks on failure.
 There is no rollback and no substitution of rendered/physics frames for game ticks.
+Frame-delayed input aligns to a physics boundary so a one-frame hold is visible
+to one complete physics step. Both sides reserve a conservative deadline using
+Godot's minimum tick rate, including games that change the rate at runtime.

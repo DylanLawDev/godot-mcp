@@ -281,3 +281,36 @@ func test_dead_child_with_buffered_logs_is_not_reported_forced() -> void:
 	assert_true(stop.value.ok)
 	assert_false(stop.value.value.forced)
 	manager.shutdown()
+
+func test_dropped_peer_cannot_restore_connection_and_payload_progress_is_live() -> void:
+	var manager := Sessions.new(FakeJobs.new())
+	var id: String = manager.launch("res://examples/scenes/main.tscn", true).value.session_id
+	var peer := FakePeer.new()
+	var item := {"id": id, "peer": peer}
+	manager.sessions[id]._peer = peer
+	manager.sessions[id].state = "running"
+	manager.sessions[id]._heartbeat = 0
+	manager._note_activity(item, 65536)
+	assert_true(manager.sessions[id].bridge_connected)
+	assert_true(manager.sessions[id]._heartbeat > 0)
+	manager._receive(item, {"session_id": "wrong", "kind": "heartbeat"})
+	manager._receive(item, {"session_id": id, "kind": "heartbeat"})
+	assert_false(manager.sessions[id].bridge_connected)
+	manager.shutdown()
+
+func test_termination_attempt_resets_stale_kill_and_handles_exit_race() -> void:
+	var jobs = preload("res://addons/godot_mcp/runtime/process_jobs.gd").new()
+	jobs.records["id"] = {"kill_sent": true, "termination_reason": "startup_timeout", "sequence": 0, "output": []}
+	jobs._handles["id"] = {"pid": 7, "stdio": null, "stderr": null}
+	jobs.process_is_running = func(_pid): return false
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	var checks := {"count": 0}
+	jobs.process_is_running = func(_pid):
+		checks.count += 1
+		return checks.count == 1
+	jobs.process_kill = func(_pid): return ERR_DOES_NOT_EXIST
+	assert_true(jobs.terminate("id", "forced_stop"))
+	assert_false(jobs.records.id.kill_sent)
+	assert_eq(jobs.records.id.termination_reason, "startup_timeout")
+	jobs.shutdown()

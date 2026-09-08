@@ -18,6 +18,7 @@ var _heartbeat := 0
 var _deadline := 0
 var _tasks: Dictionary = {}
 var _quitting := false
+var _closed := false
 
 func configure(args: Dictionary, capture) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -49,12 +50,12 @@ func _process(_delta: float) -> void:
 		if read[0] == OK:
 			for message in _wire.feed(read[1]):
 				_receive(message)
-				if _quitting:
+				if _quitting or _closed or _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 					break
 		if _wire.error != "":
-			_peer.disconnect_from_host()
+			_disconnect()
 			return
-	if _quitting or not _accepted:
+	if _quitting or _closed or not _accepted:
 		return
 	if scene_ready and not _ready_sent:
 		_send({"kind": "ready", "capabilities": {"rendering": DisplayServer.get_name() != "headless", "commands": handlers.keys()}})
@@ -70,15 +71,15 @@ func _process(_delta: float) -> void:
 			_tasks.erase(id)
 
 func _receive(message: Dictionary) -> void:
-	if _quitting:
+	if _quitting or _closed:
 		return
 	if message.get("session_id") != session_id:
-		_peer.disconnect_from_host()
+		_disconnect()
 		return
 	if not _accepted:
 		_accepted = message.get("kind") == "accepted" and message.get("version") == 1
 		if not _accepted:
-			_peer.disconnect_from_host()
+			_disconnect()
 		return
 	var id := str(message.get("request_id", ""))
 	var command := str(message.get("command", ""))
@@ -87,7 +88,7 @@ func _receive(message: Dictionary) -> void:
 			_tasks[id].cancel()
 		return
 	if id == "" or _tasks.has(id) or not message.get("args") is Dictionary:
-		_peer.disconnect_from_host()
+		_disconnect()
 		return
 	if command == "quit":
 		_cleanup()
@@ -112,7 +113,7 @@ func _reply(id: String, result: Variant) -> bool:
 		return true
 	# Never silently drop a completed request when even its error cannot queue.
 	# Disconnect makes every outstanding manager request fail immediately.
-	_peer.disconnect_from_host()
+	_disconnect()
 	return false
 
 func _send(message: Dictionary) -> bool:
@@ -127,4 +128,8 @@ func _cleanup() -> void:
 
 func _exit_tree() -> void:
 	_cleanup()
+	_disconnect()
+
+func _disconnect() -> void:
+	_closed = true
 	_peer.disconnect_from_host()

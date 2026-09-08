@@ -333,3 +333,8 @@ must never be substituted with a newer session when an explicit old ID is used.
 Use `stop_project({session_id})` on the launched run and expect `forced:false`.
 Repeat it and expect `already_stopped:true`. Verify the editor and unrelated
 Godot windows remain open. The integration runner now uses this public stop tool.
+
+Run `tests/run_runtime_integration.sh --render` with GODOT set to a window-capable
+binary. It opens a temporary game window and checks both file/base64 screenshots
+against a red fixture pixel, then stops the game. The default headless path
+checks the explicit no-renderer error instead.

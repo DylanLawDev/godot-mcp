@@ -1,7 +1,9 @@
 extends Node
 const Peer = preload("res://addons/godot_mcp/runtime/bridge_peer.gd")
+const Commands = preload("res://addons/godot_mcp/runtime/runtime_commands.gd")
 const Wire = preload("res://addons/godot_mcp/runtime/bridge_wire.gd")
 const Deferred = preload("res://addons/godot_mcp/runtime/deferred_result.gd")
+var _commands
 var scene_ready := false
 var session_id := ""
 var logger
@@ -23,6 +25,8 @@ func configure(args: Dictionary, capture) -> void:
 	session_id = str(args["--mcp-session"])
 	_token = str(args["--mcp-token"])
 	logger = capture
+	_commands = Commands.new(self)
+	_commands.register_handlers()
 	_peer.connect_to_host("127.0.0.1", int(args["--mcp-port"]))
 	_deadline = Time.get_ticks_msec() + 15000
 

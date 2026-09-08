@@ -45,7 +45,7 @@ func test_tools_list_exposes_all_distinct_tools() -> void:
 	var names := {}
 	for t in d["result"]["tools"]:
 		names[t["name"]] = true
-	var runtime_names := ["run_project", "get_run_status", "stop_project", "capture_game_frame", "send_input", "resize_game_window", "get_runtime_tree", "get_runtime_properties", "get_runtime_errors"]
+	var runtime_names := ["run_project", "get_run_status", "stop_project", "capture_game_frame", "send_input", "resize_game_window", "get_runtime_tree", "get_runtime_properties", "get_runtime_errors", "run_scenario"]
 	var expected_count := 40 + runtime_names.size()
 	assert_eq(d["result"]["tools"].size(), expected_count, "tool count drifted")
 	assert_eq(names.size(), expected_count, "duplicate tool name registered")

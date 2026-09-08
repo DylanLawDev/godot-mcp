@@ -356,3 +356,8 @@ input-to-observed-state loop without looking at the edited scene.
 The runtime-error fixture emits a known `push_error` and stderr message. Verify
 `get_runtime_errors` includes them with source tags, file/function context where
 available, and still returns them after stopping the game. Pagination is read-only.
+
+Launch `run_scenario` with `examples/scenarios/move_right.json`. Confirm a stable
+scenario ID and a result JSON appear without blocking editor requests. Try a
+second launch while it is running and expect a busy error. Capture scenarios
+must write below their own run directories, leaving original JSON unchanged.

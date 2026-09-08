@@ -16,11 +16,16 @@ var _output: FileAccess
 var _removing := false
 var _remove_dirs: Array[String] = []
 var _excluded: Array[String] = []
+var _required: Array[String] = []
+var _restricted: Array[String] = []
 
-func _init(from: String, to: String, remove: bool = false) -> void:
+func _init(from: String, to: String, remove: bool = false, keep_paths: Array = []) -> void:
 	source = from
 	target = to
 	_removing = remove
+	for path in keep_paths:
+		if path is String and path.simplify_path().begins_with(source + "/"):
+			_required.append(path.simplify_path())
 	if not remove:
 		var presets := ConfigFile.new()
 		if presets.load(source.path_join("export_presets.cfg")) == OK:
@@ -71,10 +76,19 @@ func poll() -> void:
 			var relative := _relative.path_join(name)
 			var absolute := source.path_join(relative)
 			var managed := ProjectSettings.globalize_path("user://godot_mcp").trim_suffix("/")
-			if not _removing and managed.begins_with(source + "/") and absolute == managed:
-				continue
-			if not _removing and (_directory.current_is_dir() and (name in SKIP_DIRS or (_relative == "" and name in ROOT_OUTPUT_DIRS)) or absolute in _excluded):
-				continue
+			if not _removing:
+				var restricted := false
+				for scope in _restricted:
+					if absolute.begins_with(scope + "/"):
+						restricted = true
+				if restricted and not _required_within(absolute):
+					continue
+				var excluded: bool = (managed.begins_with(source + "/") and absolute == managed) or (_directory.current_is_dir() and (name in SKIP_DIRS or (_relative == "" and name in ROOT_OUTPUT_DIRS))) or absolute in _excluded
+				if excluded:
+					if not _required_within(absolute):
+						continue
+					if _directory.current_is_dir():
+						_restricted.append(absolute)
 			if _directory.is_link(name):
 				if _removing:
 					if DirAccess.remove_absolute(absolute) != OK:
@@ -149,3 +163,9 @@ static func disable_mcp(path: String) -> Error:
 		if writable != OK:
 			return writable
 	return config.save(path)
+
+func _required_within(path: String) -> bool:
+	for required in _required:
+		if required == path or required.begins_with(path + "/"):
+			return true
+	return false

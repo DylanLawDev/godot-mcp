@@ -28,7 +28,7 @@ func start(kind: String, options: Dictionary) -> Dictionary:
 		records[id]["preset"] = options.preset
 		records[id]["mode"] = options.mode
 		records[id]["platform"] = options.platform
-	_copy = Snapshot.new(ProjectSettings.globalize_path("res://").trim_suffix("/"), records[id]._snapshot)
+	_copy = Snapshot.new(ProjectSettings.globalize_path("res://").trim_suffix("/"), records[id]._snapshot, false, options.get("snapshot_keep_paths", []))
 	_cleanup = false
 	return status(id, kind)
 

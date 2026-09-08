@@ -43,7 +43,7 @@ static func prepare(preset: String, mode: String, source: String) -> Dictionary:
 			var value: Variant = config.get_value(options, key)
 			if value is String and value != "":
 				redactions.append(value)
-	return {"ok": true, "value": {"preset": preset, "mode": mode, "platform": platform, "filename": filename, "redactions": redactions}}
+	return {"ok": true, "value": {"preset": preset, "mode": mode, "platform": platform, "filename": filename, "snapshot_keep_paths": [template], "redactions": redactions}}
 
 static func arguments(snapshot: String, preset: String, mode: String, output: String) -> PackedStringArray:
 	return PackedStringArray(["--headless", "--path", snapshot, "--export-" + mode, preset, output])

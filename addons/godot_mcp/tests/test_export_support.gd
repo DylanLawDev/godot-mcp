@@ -54,3 +54,22 @@ func test_secret_redaction_spans_interleaved_pipe_chunks() -> void:
 	assert_eq(sanitized[0].text, "prefix [REDACTED] suffix")
 	assert_eq(sanitized[1].text, "ordinary output")
 	assert_false(JSON.stringify(sanitized).contains("signing-se"))
+
+func test_selected_template_survives_output_directory_exclusion() -> void:
+	var source := Sessions.artifact_dir(Sessions.new_id())
+	var target := source + " copy"
+	DirAccess.make_dir_recursive_absolute(source.path_join("build"))
+	for name in ["template", "old-output"]:
+		var file := FileAccess.open(source.path_join("build/" + name), FileAccess.WRITE)
+		file.store_string(name)
+		file.close()
+	var copy := Snapshot.new(source, target, false, [source.path_join("build/template")])
+	while not copy.done:
+		copy.poll()
+	assert_eq(copy.error, "")
+	assert_eq(FileAccess.get_file_as_string(target.path_join("build/template")), "template")
+	assert_false(FileAccess.file_exists(target.path_join("build/old-output")))
+	for path in [source, target]:
+		var cleanup := Snapshot.new(path, "", true)
+		while not cleanup.done:
+			cleanup.poll()

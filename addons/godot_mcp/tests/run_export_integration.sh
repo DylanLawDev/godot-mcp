@@ -34,4 +34,9 @@ custom_template/release=""
 binary_format/architecture="x86_64"
 binary_format/embed_pck=false
 PRESET
+if [[ -n "${GODOT_CUSTOM_TEMPLATE:-}" ]]; then
+  mkdir -p "$fixture_dir/build"
+  cp "$GODOT_CUSTOM_TEMPLATE" "$fixture_dir/build/custom_template"
+  sed -i -e 's@custom_template/debug=""@custom_template/debug="res://build/custom_template"@' -e 's@custom_template/release=""@custom_template/release="res://build/custom_template"@' "$fixture_dir/export_presets.cfg"
+fi
 "${GODOT:-godot4}" --headless --path "$fixture_dir" --script addons/godot_mcp/tests/integration_export.gd -- "${1:-debug}"

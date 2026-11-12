@@ -285,6 +285,22 @@ for live-server testing. The headless unit suite runs with:
 ./addons/godot_mcp/run_tests.sh
 ```
 
+### Working in a Claude Code cloud session
+
+The repo is set up to run in a [Claude Code cloud session](https://code.claude.com/docs/en/claude-code-on-the-web)
+(started from claude.ai/code or the Claude mobile app):
+
+1. Create a cloud environment for this repo and paste
+   [`.claude/cloud/setup.sh`](.claude/cloud/setup.sh) into its **Setup script**
+   field. It installs the CI-pinned Godot as `godot4`.
+2. Start a session. A `SessionStart` hook
+   ([`.claude/cloud/session-start.sh`](.claude/cloud/session-start.sh)) launches a
+   headless editor, and [`.mcp.json`](.mcp.json) connects Claude to its MCP
+   server on `127.0.0.1:8765`.
+
+The hook does nothing outside cloud sessions. Cloud VMs have no display, so
+`run_scenario.sh --render` and screenshot tools won't produce pixels there.
+
 ## License
 
 See [`LICENSE`](LICENSE).
